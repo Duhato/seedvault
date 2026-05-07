@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#2d5a27">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SeedVault">
+  <title>SeedVault</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <nav id="navbar">
+      <div class="nav-brand">
+        <span class="nav-icon">🌱</span>
+        <span class="nav-title">SeedVault</span>
+      </div>
+      <div class="nav-links">
+        <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+        <button class="nav-btn" data-page="varieties">Varieties</button>
+        <button class="nav-btn" data-page="seedlots">Seed Lots</button>
+        <button class="nav-btn" data-page="plants">Plants</button>
+        <button class="nav-btn" data-page="harvest">Harvest Log</button>
+        <button class="nav-btn" data-page="projects">Breeding</button>
+      </div>
+      <button class="hamburger" id="hamburger">☰</button>
+    </nav>
+
+    <div id="mobile-menu" class="mobile-menu hidden">
+      <button class="mobile-nav-btn active" data-page="dashboard">🏠 Dashboard</button>
+      <button class="mobile-nav-btn" data-page="varieties">🌿 Varieties</button>
+      <button class="mobile-nav-btn" data-page="seedlots">🫙 Seed Lots</button>
+      <button class="mobile-nav-btn" data-page="plants">🪴 Plants</button>
+      <button class="mobile-nav-btn" data-page="harvest">📋 Harvest Log</button>
+      <button class="mobile-nav-btn" data-page="projects">🧬 Breeding</button>
+    </div>
+
+    <main id="main-content"></main>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div id="modal" class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button id="modal-close">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js');
+    }
+  </script>
+</body>
+</html>
