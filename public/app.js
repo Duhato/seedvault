@@ -82,27 +82,15 @@ function renderDashboard() {
       <span style="color:var(--text-muted);font-size:0.9rem;">${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</span>
     </div>
     <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-number">${s.varieties || 0}</div>
-        <div class="stat-label">Varieties</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number">${s.seedLots || 0}</div>
-        <div class="stat-label">Seed Lots</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number">${s.activePlants || 0}</div>
-        <div class="stat-label">Plants This Season</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number">${s.activeProjects || 0}</div>
-        <div class="stat-label">Active Projects</div>
-      </div>
+      <div class="stat-card"><div class="stat-number">${s.varieties || 0}</div><div class="stat-label">Varieties</div></div>
+      <div class="stat-card"><div class="stat-number">${s.seedLots || 0}</div><div class="stat-label">Seed Lots</div></div>
+      <div class="stat-card"><div class="stat-number">${s.activePlants || 0}</div><div class="stat-label">Plants This Season</div></div>
+      <div class="stat-card"><div class="stat-number">${s.activeProjects || 0}</div><div class="stat-label">Active Projects</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
       <div class="card">
         <div class="card-title">🫙 Recent Seed Lots</div>
-        ${recentLots.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No seed lots yet. Add your first variety!</p>' : `
+        ${recentLots.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No seed lots yet.</p>' : `
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${recentLots.map(lot => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;">
@@ -114,7 +102,7 @@ function renderDashboard() {
       </div>
       <div class="card">
         <div class="card-title">⭐ Selected for Seed Saving</div>
-        ${selectedPlants.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No plants flagged for seed saving yet.</p>' : `
+        ${selectedPlants.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No plants flagged yet.</p>' : `
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${selectedPlants.map(p => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;">
@@ -128,7 +116,7 @@ function renderDashboard() {
     <div class="card" style="margin-top:20px;">
       <div class="card-title">🧬 Active Breeding Projects</div>
       ${state.projects.filter(p => p.status === 'active').length === 0
-        ? '<p style="color:var(--text-muted);font-size:0.9rem;">No active breeding projects. Start one in the Breeding tab!</p>'
+        ? '<p style="color:var(--text-muted);font-size:0.9rem;">No active breeding projects.</p>'
         : state.projects.filter(p => p.status === 'active').map(p => `
           <div style="padding:12px;background:var(--green-bg);border-radius:6px;margin-bottom:8px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -142,6 +130,7 @@ function renderDashboard() {
   `;
 }
 
+// ==================== VARIETIES ====================
 function renderVarieties() {
   return `
     <div class="page-header">
@@ -150,11 +139,9 @@ function renderVarieties() {
     </div>
     <div class="card">
       ${state.varieties.length === 0
-        ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>No varieties yet. Add your first one!</p></div>`
+        ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>No varieties yet.</p></div>`
         : `<div class="table-wrap"><table>
-          <thead><tr>
-            <th>Code</th><th>Name</th><th>Species</th><th>Type</th><th>Source</th><th>Year</th><th>Lots</th>
-          </tr></thead>
+          <thead><tr><th>Code</th><th>Name</th><th>Species</th><th>Type</th><th>Source</th><th>Year</th><th>Lots</th><th>Actions</th></tr></thead>
           <tbody>
             ${state.varieties.map(v => {
               const lots = state.seedLots.filter(l => l.variety_code === v.code).length;
@@ -166,6 +153,10 @@ function renderVarieties() {
                 <td>${v.source || '—'}</td>
                 <td>${v.year_acquired || '—'}</td>
                 <td><span class="gen-badge">${lots}</span></td>
+                <td style="display:flex;gap:4px;">
+                  <button class="btn btn-secondary btn-sm" onclick="showEditVariety('${v.code}')">✏️ Edit</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteVariety('${v.code}')">🗑️</button>
+                </td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -175,44 +166,53 @@ function renderVarieties() {
 }
 
 function showAddVariety() {
-  openModal('Add New Variety', `
+  openModal('Add New Variety', varietyForm(null));
+}
+
+function showEditVariety(code) {
+  const v = state.varieties.find(x => x.code === code);
+  openModal('Edit Variety — ' + code, varietyForm(v));
+}
+
+function varietyForm(v) {
+  return `
     <div class="form-group">
       <label class="form-label">Species *</label>
-      <select class="form-control" id="f-species">
-        ${state.species.map(s => `<option value="${s.code}">${s.name}</option>`).join('')}
+      <select class="form-control" id="f-species" ${v ? 'disabled' : ''}>
+        ${state.species.map(s => `<option value="${s.code}" ${v && v.species_code === s.code ? 'selected' : ''}>${s.name}</option>`).join('')}
       </select>
     </div>
     <div class="form-group">
       <label class="form-label">Variety Name *</label>
-      <input class="form-control" id="f-vname" placeholder="e.g. Straight 8">
+      <input class="form-control" id="f-vname" placeholder="e.g. Straight 8" value="${v ? v.name : ''}">
     </div>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Type</label>
         <select class="form-control" id="f-type">
-          <option value="OP">Open Pollinated</option>
-          <option value="Heirloom">Heirloom</option>
-          <option value="Hybrid">Hybrid</option>
+          <option value="OP" ${v && v.type === 'OP' ? 'selected' : ''}>Open Pollinated</option>
+          <option value="Heirloom" ${v && v.type === 'Heirloom' ? 'selected' : ''}>Heirloom</option>
+          <option value="Hybrid" ${v && v.type === 'Hybrid' ? 'selected' : ''}>Hybrid</option>
         </select>
       </div>
       <div class="form-group">
         <label class="form-label">Year Acquired</label>
-        <input class="form-control" id="f-year" type="number" placeholder="${new Date().getFullYear()}">
+        <input class="form-control" id="f-year" type="number" value="${v ? v.year_acquired || '' : ''}">
       </div>
     </div>
     <div class="form-group">
       <label class="form-label">Source</label>
-      <input class="form-control" id="f-source" placeholder="e.g. Burpee">
+      <input class="form-control" id="f-source" value="${v ? v.source || '' : ''}" placeholder="e.g. Burpee">
     </div>
     <div class="form-group">
       <label class="form-label">Description / Notes</label>
-      <textarea class="form-control" id="f-desc" rows="3" placeholder="Variety notes..."></textarea>
+      <textarea class="form-control" id="f-desc" rows="3">${v ? v.description || '' : ''}</textarea>
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitVariety()">Save Variety</button>
+      <button class="btn btn-primary" onclick="${v ? `submitEditVariety('${v.code}')` : 'submitVariety()'}">${v ? 'Save Changes' : 'Save Variety'}</button>
     </div>
-  `);
+  `;
 }
 
 async function submitVariety() {
@@ -220,18 +220,35 @@ async function submitVariety() {
   const species_code = document.getElementById('f-species').value;
   if (!name || !species_code) return alert('Name and species are required');
   await api('/api/varieties', 'POST', {
-    name,
-    species_code,
+    name, species_code,
     type: document.getElementById('f-type').value,
     year_acquired: document.getElementById('f-year').value || null,
     source: document.getElementById('f-source').value,
     description: document.getElementById('f-desc').value,
   });
-  closeModal();
-  await loadAll();
-  render();
+  closeModal(); await loadAll(); render();
 }
 
+async function submitEditVariety(code) {
+  const name = document.getElementById('f-vname').value.trim();
+  if (!name) return alert('Name is required');
+  await api('/api/varieties/' + code, 'PUT', {
+    name,
+    type: document.getElementById('f-type').value,
+    year_acquired: document.getElementById('f-year').value || null,
+    source: document.getElementById('f-source').value,
+    description: document.getElementById('f-desc').value,
+  });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteVariety(code) {
+  if (!confirm('Delete variety ' + code + '? This cannot be undone.')) return;
+  await api('/api/varieties/' + code, 'DELETE');
+  await loadAll(); render();
+}
+
+// ==================== SEED LOTS ====================
 function renderSeedLots() {
   return `
     <div class="page-header">
@@ -242,9 +259,7 @@ function renderSeedLots() {
       ${state.seedLots.length === 0
         ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>No seed lots yet.</p></div>`
         : `<div class="table-wrap"><table>
-          <thead><tr>
-            <th>Designation</th><th>Variety</th><th>Generation</th><th>Year Saved</th><th>Qty</th><th>Storage</th><th>Germination</th><th>Actions</th>
-          </tr></thead>
+          <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Qty</th><th>Storage</th><th>Germination</th><th>Actions</th></tr></thead>
           <tbody>
             ${state.seedLots.map(lot => `<tr>
               <td><span class="designation">${lot.designation}</span></td>
@@ -254,8 +269,10 @@ function renderSeedLots() {
               <td>${lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—'}</td>
               <td>${lot.storage_location || '—'}</td>
               <td>${lot.germination_rate ? lot.germination_rate + '%' : '—'}</td>
-              <td>
+              <td style="display:flex;gap:4px;flex-wrap:wrap;">
                 <button class="btn btn-secondary btn-sm" onclick="showAddPlants('${lot.designation}')">+ Plants</button>
+                <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
               </td>
             </tr>`).join('')}
           </tbody>
@@ -265,8 +282,18 @@ function renderSeedLots() {
 }
 
 function showAddSeedLot() {
-  openModal('Add Seed Lot', `
-    <div class="alert alert-info">Designation code is generated automatically.</div>
+  openModal('Add Seed Lot', seedLotForm(null));
+}
+
+function showEditSeedLot(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  openModal('Edit Seed Lot — ' + designation, seedLotForm(lot));
+}
+
+function seedLotForm(lot) {
+  return `
+    ${!lot ? '<div class="alert alert-info">Designation code is generated automatically.</div>' : ''}
+    ${!lot ? `
     <div class="form-group">
       <label class="form-label">Variety *</label>
       <select class="form-control" id="f-variety">
@@ -283,34 +310,44 @@ function showAddSeedLot() {
         <label class="form-label">Year Saved *</label>
         <input class="form-control" id="f-yearsaved" type="number" value="${new Date().getFullYear()}">
       </div>
-    </div>
+    </div>` : ''}
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Quantity Estimate (seeds)</label>
-        <input class="form-control" id="f-qty" type="number" placeholder="e.g. 50">
+        <input class="form-control" id="f-qty" type="number" value="${lot ? lot.quantity_estimate || '' : ''}">
       </div>
       <div class="form-group">
         <label class="form-label">Storage Location</label>
-        <input class="form-control" id="f-storage" placeholder="e.g. Ammo box">
+        <input class="form-control" id="f-storage" value="${lot ? lot.storage_location || '' : ''}" placeholder="e.g. Ammo box">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Germination Rate %</label>
+        <input class="form-control" id="f-germrate" type="number" min="0" max="100" value="${lot ? lot.germination_rate || '' : ''}" placeholder="e.g. 90">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Last Tested Date</label>
+        <input class="form-control" id="f-lasttest" type="date" value="${lot && lot.last_tested ? lot.last_tested.split('T')[0] : ''}">
       </div>
     </div>
     <div class="form-group">
       <label class="form-label">Mother Plant Designation</label>
-      <input class="form-control" id="f-mother" placeholder="e.g. CUC-S8-G1-2024-P02">
+      <input class="form-control" id="f-mother" value="${lot ? lot.mother_designation || '' : ''}" placeholder="e.g. CUC-S8-G1-2024-P02">
     </div>
     <div class="form-group">
-      <label class="form-label">Father Plant Designation (if cross)</label>
-      <input class="form-control" id="f-father" placeholder="e.g. CUC-PB-G1-2024-P01">
+      <label class="form-label">Father Plant Designation</label>
+      <input class="form-control" id="f-father" value="${lot ? lot.father_designation || '' : ''}" placeholder="e.g. CUC-PB-G1-2024-P01">
     </div>
     <div class="form-group">
       <label class="form-label">Notes</label>
-      <textarea class="form-control" id="f-notes" rows="3" placeholder="Selection notes..."></textarea>
+      <textarea class="form-control" id="f-notes" rows="3">${lot ? lot.notes || '' : ''}</textarea>
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitSeedLot()">Save Seed Lot</button>
+      <button class="btn btn-primary" onclick="${lot ? `submitEditSeedLot('${lot.designation}')` : 'submitSeedLot()'}">${lot ? 'Save Changes' : 'Save Seed Lot'}</button>
     </div>
-  `);
+  `;
 }
 
 async function submitSeedLot() {
@@ -319,21 +356,37 @@ async function submitSeedLot() {
   const year_saved = document.getElementById('f-yearsaved').value;
   if (!variety_code || !generation || !year_saved) return alert('Variety, generation and year are required');
   const result = await api('/api/seed-lots', 'POST', {
-    variety_code,
-    generation: parseInt(generation),
-    year_saved: parseInt(year_saved),
+    variety_code, generation: parseInt(generation), year_saved: parseInt(year_saved),
     quantity_estimate: document.getElementById('f-qty').value || null,
     storage_location: document.getElementById('f-storage').value,
     mother_designation: document.getElementById('f-mother').value,
     father_designation: document.getElementById('f-father').value,
     notes: document.getElementById('f-notes').value,
   });
-  closeModal();
-  await loadAll();
-  render();
+  closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ Seed lot created!\nDesignation: ' + result.designation), 100);
 }
 
+async function submitEditSeedLot(designation) {
+  await api('/api/seed-lots/' + designation, 'PUT', {
+    quantity_estimate: document.getElementById('f-qty').value || null,
+    storage_location: document.getElementById('f-storage').value,
+    germination_rate: document.getElementById('f-germrate').value || null,
+    last_tested: document.getElementById('f-lasttest').value || null,
+    mother_designation: document.getElementById('f-mother').value,
+    father_designation: document.getElementById('f-father').value,
+    notes: document.getElementById('f-notes').value,
+  });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteSeedLot(designation) {
+  if (!confirm('Delete seed lot ' + designation + '? This cannot be undone.')) return;
+  await api('/api/seed-lots/' + designation, 'DELETE');
+  await loadAll(); render();
+}
+
+// ==================== PLANTS ====================
 function renderPlants() {
   const year = new Date().getFullYear();
   const thisYear = state.plants.filter(p => p.season_year === year);
@@ -346,9 +399,7 @@ function renderPlants() {
       ${thisYear.length === 0
         ? `<div class="empty-state"><div class="empty-state-icon">🪴</div><p>No plants logged this season yet.</p></div>`
         : `<div class="table-wrap"><table>
-          <thead><tr>
-            <th>Designation</th><th>Variety</th><th>Seed Lot</th><th>Season</th><th>Seed Save</th><th>Notes</th><th>Actions</th>
-          </tr></thead>
+          <thead><tr><th>Designation</th><th>Variety</th><th>Seed Lot</th><th>Season</th><th>Seed Save</th><th>Notes</th><th>Actions</th></tr></thead>
           <tbody>
             ${thisYear.map(p => `<tr>
               <td><span class="designation">${p.designation}</span></td>
@@ -356,11 +407,13 @@ function renderPlants() {
               <td><span class="designation" style="font-size:0.75rem;">${p.seed_lot_designation}</span></td>
               <td>${p.season_type}</td>
               <td>${p.selected_for_seed ? '<span class="seed-star">⭐ Selected</span>' : '—'}</td>
-              <td style="max-width:200px;font-size:0.85rem;">${p.notes || '—'}</td>
-              <td>
+              <td style="max-width:150px;font-size:0.85rem;">${p.notes || '—'}</td>
+              <td style="display:flex;gap:4px;flex-wrap:wrap;">
                 <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">
                   ${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}
                 </button>
+                <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="deletePlant('${p.designation}')">🗑️</button>
               </td>
             </tr>`).join('')}
           </tbody>
@@ -370,13 +423,17 @@ function renderPlants() {
     <div class="card">
       <div class="card-title">📚 Previous Seasons</div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Designation</th><th>Variety</th><th>Year</th><th>Seed Save</th></tr></thead>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Year</th><th>Seed Save</th><th>Actions</th></tr></thead>
         <tbody>
           ${state.plants.filter(p => p.season_year !== year).map(p => `<tr>
             <td><span class="designation">${p.designation}</span></td>
             <td>${p.variety_name || '—'}</td>
             <td>${p.season_year}</td>
             <td>${p.selected_for_seed ? '⭐' : '—'}</td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
+              <button class="btn btn-danger btn-sm" onclick="deletePlant('${p.designation}')">🗑️</button>
+            </td>
           </tr>`).join('')}
         </tbody>
       </table></div>
@@ -386,7 +443,7 @@ function renderPlants() {
 
 function showAddPlants(preselectedLot = '') {
   openModal('Add Plants to Season', `
-    <div class="alert alert-info">Plant designations are auto-generated from the seed lot + sequential number.</div>
+    <div class="alert alert-info">Plant designations are auto-generated.</div>
     <div class="form-group">
       <label class="form-label">Seed Lot *</label>
       <select class="form-control" id="f-lot">
@@ -411,11 +468,41 @@ function showAddPlants(preselectedLot = '') {
     </div>
     <div class="form-group">
       <label class="form-label">Notes</label>
-      <textarea class="form-control" id="f-notes" rows="2" placeholder="Planting notes..."></textarea>
+      <textarea class="form-control" id="f-notes" rows="2"></textarea>
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitPlants()">Add Plants</button>
+    </div>
+  `);
+}
+
+function showEditPlant(designation) {
+  const p = state.plants.find(x => x.designation === designation);
+  openModal('Edit Plant — ' + designation, `
+    <div class="form-group">
+      <label class="form-label">Season</label>
+      <select class="form-control" id="f-season">
+        <option value="summer" ${p.season_type === 'summer' ? 'selected' : ''}>Summer</option>
+        <option value="winter" ${p.season_type === 'winter' ? 'selected' : ''}>Winter (Greenhouse)</option>
+        <option value="spring" ${p.season_type === 'spring' ? 'selected' : ''}>Spring</option>
+        <option value="fall" ${p.season_type === 'fall' ? 'selected' : ''}>Fall</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Selected for Seed Save</label>
+      <select class="form-control" id="f-seedsave">
+        <option value="false" ${!p.selected_for_seed ? 'selected' : ''}>No</option>
+        <option value="true" ${p.selected_for_seed ? 'selected' : ''}>Yes ⭐</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" id="f-notes" rows="3">${p.notes || ''}</textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditPlant('${designation}')">Save Changes</button>
     </div>
   `);
 }
@@ -431,10 +518,19 @@ async function submitPlants() {
     count: parseInt(count),
     notes: document.getElementById('f-notes').value,
   });
-  closeModal();
-  await loadAll();
-  render();
+  closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ ' + result.length + ' plant(s) added!\nFirst: ' + result[0].designation), 100);
+}
+
+async function submitEditPlant(designation) {
+  const plant = state.plants.find(p => p.designation === designation);
+  await api('/api/plants/' + designation, 'PUT', {
+    selected_for_seed: document.getElementById('f-seedsave').value === 'true',
+    notes: document.getElementById('f-notes').value,
+    season_type: document.getElementById('f-season').value,
+    traits: plant.traits || {},
+  });
+  closeModal(); await loadAll(); render();
 }
 
 async function toggleSeedSelect(designation, selected) {
@@ -442,12 +538,19 @@ async function toggleSeedSelect(designation, selected) {
   await api('/api/plants/' + designation, 'PUT', {
     selected_for_seed: selected,
     notes: plant.notes,
+    season_type: plant.season_type,
     traits: plant.traits || {},
   });
-  await loadAll();
-  render();
+  await loadAll(); render();
 }
 
+async function deletePlant(designation) {
+  if (!confirm('Delete plant ' + designation + '? This cannot be undone.')) return;
+  await api('/api/plants/' + designation, 'DELETE');
+  await loadAll(); render();
+}
+
+// ==================== HARVEST ====================
 function renderHarvest() {
   return `
     <div class="page-header">
@@ -458,9 +561,7 @@ function renderHarvest() {
       ${state.harvest.length === 0
         ? `<div class="empty-state"><div class="empty-state-icon">📋</div><p>No harvest records yet.</p></div>`
         : `<div class="table-wrap"><table>
-          <thead><tr>
-            <th>Date</th><th>Plant</th><th>Variety</th><th>Length</th><th>Diameter</th><th>Weight</th><th>Seeds</th><th>Method</th>
-          </tr></thead>
+          <thead><tr><th>Date</th><th>Plant</th><th>Variety</th><th>Length</th><th>Diameter</th><th>Weight</th><th>Seeds</th><th>Method</th><th>Actions</th></tr></thead>
           <tbody>
             ${state.harvest.map(h => `<tr>
               <td>${h.harvest_date ? new Date(h.harvest_date).toLocaleDateString() : '—'}</td>
@@ -471,6 +572,10 @@ function renderHarvest() {
               <td>${h.fruit_weight_oz ? h.fruit_weight_oz + ' oz' : '—'}</td>
               <td>${h.seed_count || '—'}</td>
               <td>${h.processing_method || '—'}</td>
+              <td style="display:flex;gap:4px;">
+                <button class="btn btn-secondary btn-sm" onclick="showEditHarvest(${h.id})">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteHarvest(${h.id})">🗑️</button>
+              </td>
             </tr>`).join('')}
           </tbody>
         </table></div>`}
@@ -478,67 +583,74 @@ function renderHarvest() {
   `;
 }
 
-function showAddHarvest() {
-  openModal('Log Seed Harvest', `
+function harvestForm(h) {
+  return `
     <div class="form-group">
       <label class="form-label">Plant *</label>
-      <select class="form-control" id="f-plant">
+      <select class="form-control" id="f-plant" ${h ? 'disabled' : ''}>
         <option value="">Select plant...</option>
-        ${state.plants.map(p => `<option value="${p.designation}">${p.designation} — ${p.variety_name || ''}</option>`).join('')}
+        ${state.plants.map(p => `<option value="${p.designation}" ${h && h.plant_designation === p.designation ? 'selected' : ''}>${p.designation} — ${p.variety_name || ''}</option>`).join('')}
       </select>
     </div>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Harvest Date</label>
-        <input class="form-control" id="f-date" type="date" value="${new Date().toISOString().split('T')[0]}">
+        <input class="form-control" id="f-date" type="date" value="${h && h.harvest_date ? h.harvest_date.split('T')[0] : new Date().toISOString().split('T')[0]}">
       </div>
       <div class="form-group">
         <label class="form-label">Condition</label>
         <select class="form-control" id="f-condition">
-          <option value="perfect">Perfect</option>
-          <option value="good">Good</option>
-          <option value="overripe">Overripe (ideal for seeds)</option>
-          <option value="damaged">Damaged</option>
+          <option value="perfect" ${h && h.condition === 'perfect' ? 'selected' : ''}>Perfect</option>
+          <option value="good" ${h && h.condition === 'good' ? 'selected' : ''}>Good</option>
+          <option value="overripe" ${h && h.condition === 'overripe' ? 'selected' : ''}>Overripe (ideal for seeds)</option>
+          <option value="damaged" ${h && h.condition === 'damaged' ? 'selected' : ''}>Damaged</option>
         </select>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Fruit Length (inches)</label>
-        <input class="form-control" id="f-length" type="number" step="0.1" placeholder="e.g. 8.5">
+        <input class="form-control" id="f-length" type="number" step="0.1" value="${h ? h.fruit_length_inches || '' : ''}">
       </div>
       <div class="form-group">
         <label class="form-label">Fruit Diameter (inches)</label>
-        <input class="form-control" id="f-diameter" type="number" step="0.1" placeholder="e.g. 4.0">
+        <input class="form-control" id="f-diameter" type="number" step="0.1" value="${h ? h.fruit_diameter_inches || '' : ''}">
       </div>
     </div>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Weight (oz)</label>
-        <input class="form-control" id="f-weight" type="number" step="0.1">
+        <input class="form-control" id="f-weight" type="number" step="0.1" value="${h ? h.fruit_weight_oz || '' : ''}">
       </div>
       <div class="form-group">
         <label class="form-label">Seed Count</label>
-        <input class="form-control" id="f-seeds" type="number">
+        <input class="form-control" id="f-seeds" type="number" value="${h ? h.seed_count || '' : ''}">
       </div>
     </div>
     <div class="form-group">
       <label class="form-label">Processing Method</label>
       <select class="form-control" id="f-method">
-        <option value="direct dry">Direct Dry (cucumbers, peppers)</option>
-        <option value="wet ferment">Wet Ferment (tomatoes)</option>
-        <option value="rinse dry">Rinse and Dry</option>
+        <option value="direct dry" ${h && h.processing_method === 'direct dry' ? 'selected' : ''}>Direct Dry (cucumbers, peppers)</option>
+        <option value="wet ferment" ${h && h.processing_method === 'wet ferment' ? 'selected' : ''}>Wet Ferment (tomatoes)</option>
+        <option value="rinse dry" ${h && h.processing_method === 'rinse dry' ? 'selected' : ''}>Rinse and Dry</option>
       </select>
     </div>
     <div class="form-group">
       <label class="form-label">Notes</label>
-      <textarea class="form-control" id="f-notes" rows="2" placeholder="Selection notes..."></textarea>
+      <textarea class="form-control" id="f-notes" rows="2">${h ? h.notes || '' : ''}</textarea>
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitHarvest()">Log Harvest</button>
+      <button class="btn btn-primary" onclick="${h ? `submitEditHarvest(${h.id})` : 'submitHarvest()'}">${h ? 'Save Changes' : 'Log Harvest'}</button>
     </div>
-  `);
+  `;
+}
+
+function showAddHarvest() { openModal('Log Seed Harvest', harvestForm(null)); }
+
+function showEditHarvest(id) {
+  const h = state.harvest.find(x => x.id === id);
+  openModal('Edit Harvest Record', harvestForm(h));
 }
 
 async function submitHarvest() {
@@ -555,11 +667,30 @@ async function submitHarvest() {
     processing_method: document.getElementById('f-method').value,
     notes: document.getElementById('f-notes').value,
   });
-  closeModal();
-  await loadAll();
-  render();
+  closeModal(); await loadAll(); render();
 }
 
+async function submitEditHarvest(id) {
+  await api('/api/harvest/' + id, 'PUT', {
+    harvest_date: document.getElementById('f-date').value,
+    fruit_length_inches: document.getElementById('f-length').value || null,
+    fruit_diameter_inches: document.getElementById('f-diameter').value || null,
+    fruit_weight_oz: document.getElementById('f-weight').value || null,
+    seed_count: document.getElementById('f-seeds').value || null,
+    condition: document.getElementById('f-condition').value,
+    processing_method: document.getElementById('f-method').value,
+    notes: document.getElementById('f-notes').value,
+  });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteHarvest(id) {
+  if (!confirm('Delete this harvest record? This cannot be undone.')) return;
+  await api('/api/harvest/' + id, 'DELETE');
+  await loadAll(); render();
+}
+
+// ==================== BREEDING PROJECTS ====================
 function renderProjects() {
   return `
     <div class="page-header">
@@ -572,13 +703,17 @@ function renderProjects() {
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
             <div>
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
                 <strong style="font-size:1.1rem;">${p.name}</strong>
                 <span class="designation">${p.code}</span>
                 <span class="tag tag-${p.status}">${p.status}</span>
               </div>
               <div style="color:var(--text-muted);font-size:0.9rem;">${p.description || 'No description'}</div>
               <div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">Started: ${p.started_year}</div>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-secondary btn-sm" onclick="showEditProject('${p.code}')">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteProject('${p.code}')">🗑️</button>
             </div>
           </div>
           ${p.target_traits && p.target_traits.length > 0 ? `
@@ -603,30 +738,46 @@ function renderProjects() {
   `;
 }
 
-function showAddProject() {
-  openModal('New Breeding Project', `
-    <div class="alert alert-info">Project code is auto-generated with WV prefix.</div>
+function projectForm(p) {
+  return `
     <div class="form-group">
       <label class="form-label">Project Name *</label>
-      <input class="form-control" id="f-pname" placeholder="e.g. West Virginia Pepper">
+      <input class="form-control" id="f-pname" value="${p ? p.name : ''}" placeholder="e.g. West Virginia Pepper">
     </div>
     <div class="form-group">
       <label class="form-label">Description</label>
-      <textarea class="form-control" id="f-pdesc" rows="3" placeholder="Goal of this breeding project..."></textarea>
+      <textarea class="form-control" id="f-pdesc" rows="3">${p ? p.description || '' : ''}</textarea>
     </div>
-    <div class="form-group">
-      <label class="form-label">Started Year</label>
-      <input class="form-control" id="f-pyear" type="number" value="${new Date().getFullYear()}">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Started Year</label>
+        <input class="form-control" id="f-pyear" type="number" value="${p ? p.started_year : new Date().getFullYear()}">
+      </div>
+      ${p ? `
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-control" id="f-status">
+          <option value="active" ${p.status === 'active' ? 'selected' : ''}>Active</option>
+          <option value="complete" ${p.status === 'complete' ? 'selected' : ''}>Complete</option>
+          <option value="paused" ${p.status === 'paused' ? 'selected' : ''}>Paused</option>
+        </select>
+      </div>` : ''}
     </div>
     <div class="form-group">
       <label class="form-label">Target Traits (comma separated)</label>
-      <input class="form-control" id="f-traits" placeholder="e.g. mild heat, thick walls, poblano size, smoky flavor">
+      <input class="form-control" id="f-traits" value="${p && p.target_traits ? p.target_traits.join(', ') : ''}" placeholder="e.g. mild heat, thick walls, poblano size">
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitProject()">Create Project</button>
+      <button class="btn btn-primary" onclick="${p ? `submitEditProject('${p.code}')` : 'submitProject()'}">${p ? 'Save Changes' : 'Create Project'}</button>
     </div>
-  `);
+  `;
+}
+
+function showAddProject() { openModal('New Breeding Project', projectForm(null)); }
+function showEditProject(code) {
+  const p = state.projects.find(x => x.code === code);
+  openModal('Edit Project — ' + code, projectForm(p));
 }
 
 async function submitProject() {
@@ -635,15 +786,29 @@ async function submitProject() {
   const traitsRaw = document.getElementById('f-traits').value;
   const target_traits = traitsRaw ? traitsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
   const result = await api('/api/projects', 'POST', {
-    name,
-    description: document.getElementById('f-pdesc').value,
-    started_year: document.getElementById('f-pyear').value,
-    target_traits,
+    name, description: document.getElementById('f-pdesc').value,
+    started_year: document.getElementById('f-pyear').value, target_traits,
   });
-  closeModal();
-  await loadAll();
-  render();
+  closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ Project created!\nCode: ' + result.code), 100);
+}
+
+async function submitEditProject(code) {
+  const traitsRaw = document.getElementById('f-traits').value;
+  const target_traits = traitsRaw ? traitsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+  await api('/api/projects/' + code, 'PUT', {
+    name: document.getElementById('f-pname').value,
+    description: document.getElementById('f-pdesc').value,
+    target_traits,
+    status: document.getElementById('f-status').value,
+  });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteProject(code) {
+  if (!confirm('Delete project ' + code + '? This cannot be undone.')) return;
+  await api('/api/projects/' + code, 'DELETE');
+  await loadAll(); render();
 }
 
 // ==================== SETTINGS ====================
@@ -652,34 +817,34 @@ function renderSettings() {
     <div class="page-header">
       <h1 class="page-title">⚙️ Settings</h1>
     </div>
-
     <div class="card">
       <div class="settings-section-title">💾 Backup & Restore</div>
-
       <div class="settings-row">
         <div class="settings-row-info">
-          <h4>Export Backup</h4>
-          <p>Download a full backup of all your data as a JSON file. Store it somewhere safe.</p>
+          <h4>Export JSON Backup</h4>
+          <p>Download a full backup of all your data as a JSON file.</p>
         </div>
-        <button class="btn btn-primary" onclick="exportBackup()">⬇️ Export Backup</button>
+        <button class="btn btn-primary" onclick="exportBackup()">⬇️ Export JSON</button>
       </div>
-
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <h4>Export CSV</h4>
+          <p>Download all data as a CSV file — open in Excel or any spreadsheet app.</p>
+        </div>
+        <button class="btn btn-secondary" onclick="exportCSV()">⬇️ Export CSV</button>
+      </div>
       <div class="settings-row">
         <div class="settings-row-info">
           <h4>Import Backup</h4>
-          <p>Restore data from a previously exported JSON backup file. Existing records will not be overwritten.</p>
+          <p>Restore from a previously exported JSON backup. Existing records will not be overwritten.</p>
         </div>
         <button class="btn btn-secondary" onclick="triggerImport()">⬆️ Import Backup</button>
       </div>
     </div>
-
     <div class="card">
       <div class="settings-section-title">ℹ️ About SeedVault</div>
       <div class="settings-row">
-        <div class="settings-row-info">
-          <h4>Version</h4>
-          <p>SeedVault v1.0.0</p>
-        </div>
+        <div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.0.0</p></div>
       </div>
       <div class="settings-row">
         <div class="settings-row-info">
@@ -705,13 +870,21 @@ async function exportBackup() {
     const date = new Date().toISOString().split('T')[0];
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `seedvault-backup-${date}.json`;
-    a.click();
+    a.href = url; a.download = `seedvault-backup-${date}.json`; a.click();
     URL.revokeObjectURL(url);
-  } catch (err) {
-    alert('Export failed: ' + err.message);
-  }
+  } catch (err) { alert('Export failed: ' + err.message); }
+}
+
+async function exportCSV() {
+  try {
+    const res = await fetch('/api/backup/export-csv');
+    const blob = await res.blob();
+    const date = new Date().toISOString().split('T')[0];
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `seedvault-export-${date}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) { alert('CSV export failed: ' + err.message); }
 }
 
 function triggerImport() {
@@ -726,10 +899,11 @@ async function handleImportFile(e) {
     const backup = JSON.parse(text);
     if (backup.app !== 'SeedVault') return alert('❌ This does not appear to be a valid SeedVault backup file.');
     const preview = await api('/api/backup/preview', 'POST', backup);
+    const backupData = backup;
     openModal('Import Backup — Preview', `
-      <div class="alert alert-warn">⚠️ Review what will be imported. Existing records with the same designation will be skipped.</div>
+      <div class="alert alert-warn">⚠️ Review what will be imported. Existing records will be skipped.</div>
       <div style="background:var(--green-bg);border-radius:8px;padding:16px;margin-bottom:16px;">
-        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Backup exported: ${preview.exported_at ? new Date(preview.exported_at).toLocaleString() : 'Unknown'}</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Exported: ${preview.exported_at ? new Date(preview.exported_at).toLocaleString() : 'Unknown'}</div>
         <table style="width:100%;font-size:0.9rem;">
           <tr><td style="padding:4px 0;"><strong>Species</strong></td><td>${preview.species}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Varieties</strong></td><td>${preview.varieties}</td></tr>
@@ -741,38 +915,22 @@ async function handleImportFile(e) {
       </div>
       <div class="form-actions">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="confirmImport(${JSON.stringify(backup).split('"').join('&quot;')})">✅ Import</button>
+        <button class="btn btn-primary" id="confirm-import-btn">✅ Import</button>
       </div>
     `);
-    const backupData = backup;
-    document.querySelector('#modal-body .btn-primary').onclick = () => confirmImport(backupData);
-  } catch (err) {
-    alert('Failed to read backup file: ' + err.message);
-  }
+    document.getElementById('confirm-import-btn').onclick = () => confirmImport(backupData);
+  } catch (err) { alert('Failed to read backup file: ' + err.message); }
   e.target.value = '';
 }
 
 async function confirmImport(backup) {
   try {
     const result = await api('/api/backup/import', 'POST', backup);
-    closeModal();
-    await loadAll();
-    render();
+    closeModal(); await loadAll(); render();
     setTimeout(() => {
-      alert(`✅ Import complete!\n\nImported:\n` +
-        `  Varieties: ${result.imported.varieties}\n` +
-        `  Seed Lots: ${result.imported.seed_lots}\n` +
-        `  Plants: ${result.imported.plants}\n` +
-        `  Projects: ${result.imported.breeding_projects}\n\n` +
-        `Skipped (already exist):\n` +
-        `  Varieties: ${result.skipped.varieties}\n` +
-        `  Seed Lots: ${result.skipped.seed_lots}\n` +
-        `  Plants: ${result.skipped.plants}`
-      );
+      alert(`✅ Import complete!\n\nImported:\n  Varieties: ${result.imported.varieties}\n  Seed Lots: ${result.imported.seed_lots}\n  Plants: ${result.imported.plants}\n  Projects: ${result.imported.breeding_projects}\n\nSkipped:\n  Varieties: ${result.skipped.varieties}\n  Seed Lots: ${result.skipped.seed_lots}\n  Plants: ${result.skipped.plants}`);
     }, 100);
-  } catch (err) {
-    alert('Import failed: ' + err.message);
-  }
+  } catch (err) { alert('Import failed: ' + err.message); }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
