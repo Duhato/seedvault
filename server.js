@@ -1,4 +1,3 @@
-sudo tee /mnt/ssd-apps/seedvault/app/server.js << 'EOF'
 const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
