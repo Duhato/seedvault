@@ -28,7 +28,6 @@ async function initDB() {
         name VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS varieties (
         id SERIAL PRIMARY KEY,
         code VARCHAR(20) UNIQUE NOT NULL,
@@ -40,7 +39,6 @@ async function initDB() {
         year_acquired INTEGER,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS seed_lots (
         id SERIAL PRIMARY KEY,
         designation VARCHAR(50) UNIQUE NOT NULL,
@@ -56,7 +54,6 @@ async function initDB() {
         last_tested DATE,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS plants (
         id SERIAL PRIMARY KEY,
         designation VARCHAR(50) UNIQUE NOT NULL,
@@ -68,7 +65,6 @@ async function initDB() {
         traits JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS breeding_projects (
         id SERIAL PRIMARY KEY,
         code VARCHAR(20) UNIQUE NOT NULL,
@@ -79,7 +75,6 @@ async function initDB() {
         started_year INTEGER,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS harvest_log (
         id SERIAL PRIMARY KEY,
         plant_designation VARCHAR(50) REFERENCES plants(designation),
@@ -93,7 +88,6 @@ async function initDB() {
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       INSERT INTO species (code, name) VALUES
         ('CUC', 'Cucumber'),
         ('TOM', 'Tomato'),
@@ -106,14 +100,12 @@ async function initDB() {
   }
 }
 
-// ==================== SPECIES ====================
+// SPECIES
 app.get('/api/species', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM species ORDER BY name');
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/species', async (req, res) => {
@@ -124,12 +116,34 @@ app.post('/api/species', async (req, res) => {
       [code.toUpperCase(), name]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== VARIETIES ====================
+app.put('/api/species/:code', async (req, res) => {
+  const { code } = req.params;
+  const { name } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE species SET name=$1 WHERE code=$2 RETURNING *',
+      [name, code]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/species/:code', async (req, res) => {
+  const { code } = req.params;
+  try {
+    const check = await pool.query('SELECT COUNT(*) FROM varieties WHERE species_code=$1', [code]);
+    if (parseInt(check.rows[0].count) > 0) {
+      return res.status(400).json({ error: 'Cannot delete species with existing varieties' });
+    }
+    await pool.query('DELETE FROM species WHERE code=$1', [code]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// VARIETIES
 app.get('/api/varieties', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -139,9 +153,7 @@ app.get('/api/varieties', async (req, res) => {
       ORDER BY v.species_code, v.name
     `);
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/varieties', async (req, res) => {
@@ -155,9 +167,7 @@ app.post('/api/varieties', async (req, res) => {
       [code, name, species_code, type || 'OP', description, source, year_acquired]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/varieties/:code', async (req, res) => {
@@ -170,9 +180,7 @@ app.put('/api/varieties/:code', async (req, res) => {
       [name, type, description, source, year_acquired, code]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/varieties/:code', async (req, res) => {
@@ -180,12 +188,10 @@ app.delete('/api/varieties/:code', async (req, res) => {
   try {
     await pool.query('DELETE FROM varieties WHERE code=$1', [code]);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== SEED LOTS ====================
+// SEED LOTS
 app.get('/api/seed-lots', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -195,9 +201,7 @@ app.get('/api/seed-lots', async (req, res) => {
       ORDER BY sl.year_saved DESC, sl.designation
     `);
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/seed-lots', async (req, res) => {
@@ -210,9 +214,7 @@ app.post('/api/seed-lots', async (req, res) => {
       [designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/seed-lots/:designation', async (req, res) => {
@@ -220,15 +222,13 @@ app.put('/api/seed-lots/:designation', async (req, res) => {
   const { quantity_estimate, notes, storage_location, germination_rate, last_tested, mother_designation, father_designation } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE seed_lots SET quantity_estimate=$1, notes=$2, storage_location=$3, 
+      `UPDATE seed_lots SET quantity_estimate=$1, notes=$2, storage_location=$3,
        germination_rate=$4, last_tested=$5, mother_designation=$6, father_designation=$7
        WHERE designation=$8 RETURNING *`,
       [quantity_estimate, notes, storage_location, germination_rate, last_tested, mother_designation, father_designation, designation]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/seed-lots/:designation', async (req, res) => {
@@ -236,12 +236,10 @@ app.delete('/api/seed-lots/:designation', async (req, res) => {
   try {
     await pool.query('DELETE FROM seed_lots WHERE designation=$1', [designation]);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== PLANTS ====================
+// PLANTS
 app.get('/api/plants', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -252,9 +250,7 @@ app.get('/api/plants', async (req, res) => {
       ORDER BY p.season_year DESC, p.designation
     `);
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/plants', async (req, res) => {
@@ -278,9 +274,7 @@ app.post('/api/plants', async (req, res) => {
       created.push(result.rows[0]);
     }
     res.json(created);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/plants/:designation', async (req, res) => {
@@ -293,9 +287,7 @@ app.put('/api/plants/:designation', async (req, res) => {
       [selected_for_seed, notes, JSON.stringify(traits || {}), season_type, designation]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/plants/:designation', async (req, res) => {
@@ -303,19 +295,15 @@ app.delete('/api/plants/:designation', async (req, res) => {
   try {
     await pool.query('DELETE FROM plants WHERE designation=$1', [designation]);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== BREEDING PROJECTS ====================
+// BREEDING PROJECTS
 app.get('/api/projects', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM breeding_projects ORDER BY started_year DESC');
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/projects', async (req, res) => {
@@ -329,9 +317,7 @@ app.post('/api/projects', async (req, res) => {
       [code, name, description, JSON.stringify(target_traits || []), started_year]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/projects/:code', async (req, res) => {
@@ -344,9 +330,7 @@ app.put('/api/projects/:code', async (req, res) => {
       [name, description, JSON.stringify(target_traits || []), status, code]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/projects/:code', async (req, res) => {
@@ -354,12 +338,10 @@ app.delete('/api/projects/:code', async (req, res) => {
   try {
     await pool.query('DELETE FROM breeding_projects WHERE code=$1', [code]);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== HARVEST LOG ====================
+// HARVEST LOG
 app.get('/api/harvest', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -371,9 +353,7 @@ app.get('/api/harvest', async (req, res) => {
       ORDER BY h.harvest_date DESC
     `);
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/harvest', async (req, res) => {
@@ -385,9 +365,7 @@ app.post('/api/harvest', async (req, res) => {
       [plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/harvest/:id', async (req, res) => {
@@ -401,9 +379,7 @@ app.put('/api/harvest/:id', async (req, res) => {
       [harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes, id]
     );
     res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/harvest/:id', async (req, res) => {
@@ -411,12 +387,10 @@ app.delete('/api/harvest/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM harvest_log WHERE id=$1', [id]);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== STATS ====================
+// STATS
 app.get('/api/stats', async (req, res) => {
   try {
     const [varieties, seedLots, plants, projects] = await Promise.all([
@@ -431,12 +405,34 @@ app.get('/api/stats', async (req, res) => {
       activePlants: parseInt(plants.rows[0].count),
       activeProjects: parseInt(projects.rows[0].count),
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== BACKUP / EXPORT ====================
+// VIABILITY
+app.get('/api/viability', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT sl.*, v.name as variety_name, v.species_code
+      FROM seed_lots sl
+      LEFT JOIN varieties v ON sl.variety_code = v.code
+      ORDER BY sl.designation
+    `);
+    const currentYear = new Date().getFullYear();
+    const viabilityYears = { CUC: 5, TOM: 4, PEP: 3 };
+    const warnings = result.rows.map(lot => {
+      const maxYears = viabilityYears[lot.species_code] || 3;
+      const age = currentYear - lot.year_saved;
+      const yearsLeft = maxYears - age;
+      let status = 'good';
+      if (yearsLeft <= 0) status = 'expired';
+      else if (yearsLeft <= 1) status = 'warning';
+      return { ...lot, age, yearsLeft, maxYears, status };
+    }).filter(l => l.status !== 'good');
+    res.json(warnings);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// BACKUP EXPORT
 app.get('/api/backup/export', async (req, res) => {
   try {
     const [species, varieties, seedLots, plants, projects, harvest] = await Promise.all([
@@ -464,12 +460,10 @@ app.get('/api/backup/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/json');
     res.json(backup);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== CSV EXPORT ====================
+// CSV EXPORT
 app.get('/api/backup/export-csv', async (req, res) => {
   try {
     const [varieties, seedLots, plants, harvest] = await Promise.all([
@@ -478,7 +472,6 @@ app.get('/api/backup/export-csv', async (req, res) => {
       pool.query(`SELECT p.*, v.name as variety_name FROM plants p LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY p.designation`),
       pool.query(`SELECT h.*, v.name as variety_name FROM harvest_log h LEFT JOIN plants p ON h.plant_designation = p.designation LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY h.harvest_date`),
     ]);
-
     const toCSV = (rows, cols) => {
       if (!rows.length) return cols.join(',') + '\n';
       const header = cols.join(',');
@@ -488,24 +481,20 @@ app.get('/api/backup/export-csv', async (req, res) => {
       }).join(','));
       return [header, ...lines].join('\n');
     };
-
     const sections = [
       '=== VARIETIES ===\n' + toCSV(varieties.rows, ['code','name','species_name','type','source','year_acquired','description']),
       '=== SEED LOTS ===\n' + toCSV(seedLots.rows, ['designation','variety_name','generation','year_saved','quantity_estimate','storage_location','germination_rate','last_tested','notes']),
       '=== PLANTS ===\n' + toCSV(plants.rows, ['designation','variety_name','seed_lot_designation','season_year','season_type','selected_for_seed','notes']),
       '=== HARVEST LOG ===\n' + toCSV(harvest.rows, ['plant_designation','variety_name','harvest_date','fruit_length_inches','fruit_diameter_inches','fruit_weight_oz','seed_count','condition','processing_method','notes']),
     ];
-
     const filename = `seedvault-export-${new Date().toISOString().split('T')[0]}.csv`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'text/csv');
     res.send(sections.join('\n\n'));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ==================== BACKUP / IMPORT ====================
+// BACKUP IMPORT
 app.post('/api/backup/preview', async (req, res) => {
   try {
     const { data } = req.body;
@@ -519,9 +508,7 @@ app.post('/api/backup/preview', async (req, res) => {
       exported_at: req.body.exported_at,
       version: req.body.version,
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/backup/import', async (req, res) => {
@@ -530,83 +517,46 @@ app.post('/api/backup/import', async (req, res) => {
     const { data } = req.body;
     let imported = { species: 0, varieties: 0, seed_lots: 0, plants: 0, breeding_projects: 0, harvest_log: 0 };
     let skipped = { species: 0, varieties: 0, seed_lots: 0, plants: 0, breeding_projects: 0, harvest_log: 0 };
-
     await client.query('BEGIN');
-
     for (const s of (data.species || [])) {
-      const r = await client.query(
-        'INSERT INTO species (code, name) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING RETURNING *',
-        [s.code, s.name]
-      );
+      const r = await client.query('INSERT INTO species (code, name) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING RETURNING *', [s.code, s.name]);
       r.rowCount > 0 ? imported.species++ : skipped.species++;
     }
-
     for (const v of (data.varieties || [])) {
-      const r = await client.query(
-        `INSERT INTO varieties (code, name, species_code, type, description, source, year_acquired)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (code) DO NOTHING RETURNING *`,
-        [v.code, v.name, v.species_code, v.type, v.description, v.source, v.year_acquired]
-      );
+      const r = await client.query(`INSERT INTO varieties (code, name, species_code, type, description, source, year_acquired) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (code) DO NOTHING RETURNING *`, [v.code, v.name, v.species_code, v.type, v.description, v.source, v.year_acquired]);
       r.rowCount > 0 ? imported.varieties++ : skipped.varieties++;
     }
-
     for (const sl of (data.seed_lots || [])) {
-      const r = await client.query(
-        `INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location, germination_rate, last_tested)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (designation) DO NOTHING RETURNING *`,
-        [sl.designation, sl.variety_code, sl.generation, sl.year_saved, sl.quantity_estimate, sl.mother_designation, sl.father_designation, sl.notes, sl.storage_location, sl.germination_rate, sl.last_tested]
-      );
+      const r = await client.query(`INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location, germination_rate, last_tested) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (designation) DO NOTHING RETURNING *`, [sl.designation, sl.variety_code, sl.generation, sl.year_saved, sl.quantity_estimate, sl.mother_designation, sl.father_designation, sl.notes, sl.storage_location, sl.germination_rate, sl.last_tested]);
       r.rowCount > 0 ? imported.seed_lots++ : skipped.seed_lots++;
     }
-
     for (const p of (data.plants || [])) {
-      const r = await client.query(
-        `INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, selected_for_seed, notes, traits)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (designation) DO NOTHING RETURNING *`,
-        [p.designation, p.seed_lot_designation, p.season_year, p.season_type, p.selected_for_seed, p.notes, p.traits]
-      );
+      const r = await client.query(`INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, selected_for_seed, notes, traits) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (designation) DO NOTHING RETURNING *`, [p.designation, p.seed_lot_designation, p.season_year, p.season_type, p.selected_for_seed, p.notes, p.traits]);
       r.rowCount > 0 ? imported.plants++ : skipped.plants++;
     }
-
     for (const bp of (data.breeding_projects || [])) {
-      const r = await client.query(
-        `INSERT INTO breeding_projects (code, name, description, target_traits, status, started_year)
-         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO NOTHING RETURNING *`,
-        [bp.code, bp.name, bp.description, bp.target_traits, bp.status, bp.started_year]
-      );
+      const r = await client.query(`INSERT INTO breeding_projects (code, name, description, target_traits, status, started_year) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO NOTHING RETURNING *`, [bp.code, bp.name, bp.description, bp.target_traits, bp.status, bp.started_year]);
       r.rowCount > 0 ? imported.breeding_projects++ : skipped.breeding_projects++;
     }
-
     for (const h of (data.harvest_log || [])) {
-      const r = await client.query(
-        `INSERT INTO harvest_log (plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-        [h.plant_designation, h.harvest_date, h.fruit_length_inches, h.fruit_diameter_inches, h.fruit_weight_oz, h.condition, h.processing_method, h.seed_count, h.notes]
-      );
+      const r = await client.query(`INSERT INTO harvest_log (plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`, [h.plant_designation, h.harvest_date, h.fruit_length_inches, h.fruit_diameter_inches, h.fruit_weight_oz, h.condition, h.processing_method, h.seed_count, h.notes]);
       r.rowCount > 0 ? imported.harvest_log++ : skipped.harvest_log++;
     }
-
     await client.query('COMMIT');
     res.json({ success: true, imported, skipped });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
+  } finally { client.release(); }
 });
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-initDB()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`SeedVault running on port ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('Failed to initialize database:', err);
-    process.exit(1);
-  });
+initDB().then(() => {
+  app.listen(PORT, () => console.log(`SeedVault running on port ${PORT}`));
+}).catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
+});

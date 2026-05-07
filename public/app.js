@@ -6,7 +6,8 @@ const state = {
   projects: [],
   harvest: [],
   species: [],
-  stats: {}
+  stats: {},
+  viability: []
 };
 
 const API = '';
@@ -19,7 +20,7 @@ async function api(path, method = 'GET', body = null) {
 }
 
 async function loadAll() {
-  const [varieties, seedLots, plants, projects, harvest, species, stats] = await Promise.all([
+  const [varieties, seedLots, plants, projects, harvest, species, stats, viability] = await Promise.all([
     api('/api/varieties'),
     api('/api/seed-lots'),
     api('/api/plants'),
@@ -27,6 +28,7 @@ async function loadAll() {
     api('/api/harvest'),
     api('/api/species'),
     api('/api/stats'),
+    api('/api/viability'),
   ]);
   state.varieties = varieties;
   state.seedLots = seedLots;
@@ -35,6 +37,7 @@ async function loadAll() {
   state.harvest = harvest;
   state.species = species;
   state.stats = stats;
+  state.viability = viability;
 }
 
 function navigate(page) {
@@ -76,6 +79,7 @@ function renderDashboard() {
   const s = state.stats;
   const recentLots = [...state.seedLots].slice(0, 5);
   const selectedPlants = state.plants.filter(p => p.selected_for_seed);
+  const viabilityWarnings = state.viability;
   return `
     <div class="page-header">
       <h1 class="page-title">🌱 SeedVault Dashboard</h1>
@@ -87,6 +91,23 @@ function renderDashboard() {
       <div class="stat-card"><div class="stat-number">${s.activePlants || 0}</div><div class="stat-label">Plants This Season</div></div>
       <div class="stat-card"><div class="stat-number">${s.activeProjects || 0}</div><div class="stat-label">Active Projects</div></div>
     </div>
+    ${viabilityWarnings.length > 0 ? `
+    <div class="card" style="border-left:4px solid #ef4444;">
+      <div class="card-title">⚠️ Seed Viability Warnings</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${viabilityWarnings.map(lot => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${lot.status === 'expired' ? '#fee2e2' : '#fef3c7'};border-radius:6px;">
+            <div>
+              <span class="designation">${lot.designation}</span>
+              <span style="margin-left:8px;font-size:0.85rem;color:var(--text-muted);">${lot.variety_name}</span>
+            </div>
+            <span style="font-size:0.85rem;font-weight:700;color:${lot.status === 'expired' ? '#991b1b' : '#92400e'};">
+              ${lot.status === 'expired' ? '🔴 Expired' : `🟡 Expires in ${lot.yearsLeft} year${lot.yearsLeft === 1 ? '' : 's'}`}
+            </span>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
       <div class="card">
         <div class="card-title">🫙 Recent Seed Lots</div>
@@ -130,7 +151,6 @@ function renderDashboard() {
   `;
 }
 
-// ==================== VARIETIES ====================
 function renderVarieties() {
   return `
     <div class="page-header">
@@ -165,10 +185,7 @@ function renderVarieties() {
   `;
 }
 
-function showAddVariety() {
-  openModal('Add New Variety', varietyForm(null));
-}
-
+function showAddVariety() { openModal('Add New Variety', varietyForm(null)); }
 function showEditVariety(code) {
   const v = state.varieties.find(x => x.code === code);
   openModal('Edit Variety — ' + code, varietyForm(v));
@@ -248,8 +265,9 @@ async function deleteVariety(code) {
   await loadAll(); render();
 }
 
-// ==================== SEED LOTS ====================
 function renderSeedLots() {
+  const currentYear = new Date().getFullYear();
+  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3 };
   return `
     <div class="page-header">
       <h1 class="page-title">🫙 Seed Lots</h1>
@@ -259,32 +277,38 @@ function renderSeedLots() {
       ${state.seedLots.length === 0
         ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>No seed lots yet.</p></div>`
         : `<div class="table-wrap"><table>
-          <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Qty</th><th>Storage</th><th>Germination</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Qty</th><th>Storage</th><th>Germination</th><th>Viability</th><th>Actions</th></tr></thead>
           <tbody>
-            ${state.seedLots.map(lot => `<tr>
-              <td><span class="designation">${lot.designation}</span></td>
-              <td>${lot.variety_name || lot.variety_code}</td>
-              <td><span class="gen-badge">G${lot.generation}</span></td>
-              <td>${lot.year_saved}</td>
-              <td>${lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—'}</td>
-              <td>${lot.storage_location || '—'}</td>
-              <td>${lot.germination_rate ? lot.germination_rate + '%' : '—'}</td>
-              <td style="display:flex;gap:4px;flex-wrap:wrap;">
-                <button class="btn btn-secondary btn-sm" onclick="showAddPlants('${lot.designation}')">+ Plants</button>
-                <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
-                <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
-              </td>
-            </tr>`).join('')}
+            ${state.seedLots.map(lot => {
+              const maxYears = viabilityYears[lot.species_code] || 3;
+              const age = currentYear - lot.year_saved;
+              const yearsLeft = maxYears - age;
+              let viabilityBadge = '<span style="color:#16a34a;font-weight:600;">🟢 Good</span>';
+              if (yearsLeft <= 0) viabilityBadge = '<span style="color:#dc2626;font-weight:600;">🔴 Expired</span>';
+              else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#d97706;font-weight:600;">🟡 Expiring</span>';
+              return `<tr>
+                <td><span class="designation">${lot.designation}</span></td>
+                <td>${lot.variety_name || lot.variety_code}</td>
+                <td><span class="gen-badge">G${lot.generation}</span></td>
+                <td>${lot.year_saved}</td>
+                <td>${lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—'}</td>
+                <td>${lot.storage_location || '—'}</td>
+                <td>${lot.germination_rate ? lot.germination_rate + '%' : '—'}</td>
+                <td>${viabilityBadge}</td>
+                <td style="display:flex;gap:4px;flex-wrap:wrap;">
+                  <button class="btn btn-secondary btn-sm" onclick="showAddPlants('${lot.designation}')">+ Plants</button>
+                  <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
+                </td>
+              </tr>`;
+            }).join('')}
           </tbody>
         </table></div>`}
     </div>
   `;
 }
 
-function showAddSeedLot() {
-  openModal('Add Seed Lot', seedLotForm(null));
-}
-
+function showAddSeedLot() { openModal('Add Seed Lot', seedLotForm(null)); }
 function showEditSeedLot(designation) {
   const lot = state.seedLots.find(l => l.designation === designation);
   openModal('Edit Seed Lot — ' + designation, seedLotForm(lot));
@@ -386,7 +410,6 @@ async function deleteSeedLot(designation) {
   await loadAll(); render();
 }
 
-// ==================== PLANTS ====================
 function renderPlants() {
   const year = new Date().getFullYear();
   const thisYear = state.plants.filter(p => p.season_year === year);
@@ -430,7 +453,7 @@ function renderPlants() {
             <td>${p.variety_name || '—'}</td>
             <td>${p.season_year}</td>
             <td>${p.selected_for_seed ? '⭐' : '—'}</td>
-            <td>
+            <td style="display:flex;gap:4px;">
               <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
               <button class="btn btn-danger btn-sm" onclick="deletePlant('${p.designation}')">🗑️</button>
             </td>
@@ -550,7 +573,6 @@ async function deletePlant(designation) {
   await loadAll(); render();
 }
 
-// ==================== HARVEST ====================
 function renderHarvest() {
   return `
     <div class="page-header">
@@ -647,7 +669,6 @@ function harvestForm(h) {
 }
 
 function showAddHarvest() { openModal('Log Seed Harvest', harvestForm(null)); }
-
 function showEditHarvest(id) {
   const h = state.harvest.find(x => x.id === id);
   openModal('Edit Harvest Record', harvestForm(h));
@@ -690,7 +711,6 @@ async function deleteHarvest(id) {
   await loadAll(); render();
 }
 
-// ==================== BREEDING PROJECTS ====================
 function renderProjects() {
   return `
     <div class="page-header">
@@ -799,8 +819,7 @@ async function submitEditProject(code) {
   await api('/api/projects/' + code, 'PUT', {
     name: document.getElementById('f-pname').value,
     description: document.getElementById('f-pdesc').value,
-    target_traits,
-    status: document.getElementById('f-status').value,
+    target_traits, status: document.getElementById('f-status').value,
   });
   closeModal(); await loadAll(); render();
 }
@@ -811,7 +830,6 @@ async function deleteProject(code) {
   await loadAll(); render();
 }
 
-// ==================== SETTINGS ====================
 function renderSettings() {
   return `
     <div class="page-header">
@@ -842,6 +860,29 @@ function renderSettings() {
       </div>
     </div>
     <div class="card">
+      <div class="settings-section-title">🌿 Species Management</div>
+      <div style="margin-bottom:16px;">
+        <table style="width:100%;">
+          <thead><tr><th>Code</th><th>Name</th><th>Varieties</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${state.species.map(s => {
+              const count = state.varieties.filter(v => v.species_code === s.code).length;
+              return `<tr>
+                <td><span class="designation">${s.code}</span></td>
+                <td>${s.name}</td>
+                <td><span class="gen-badge">${count}</span></td>
+                <td style="display:flex;gap:4px;">
+                  <button class="btn btn-secondary btn-sm" onclick="showEditSpecies('${s.code}', '${s.name}')">✏️ Edit</button>
+                  ${count === 0 ? `<button class="btn btn-danger btn-sm" onclick="deleteSpecies('${s.code}')">🗑️</button>` : ''}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="showAddSpecies()">+ Add Species</button>
+    </div>
+    <div class="card">
       <div class="settings-section-title">ℹ️ About SeedVault</div>
       <div class="settings-row">
         <div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.0.0</p></div>
@@ -863,6 +904,60 @@ function renderSettings() {
   `;
 }
 
+function showAddSpecies() {
+  openModal('Add Species', `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Code * (e.g. HERB)</label>
+        <input class="form-control" id="f-scode" placeholder="e.g. HERB" maxlength="10">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input class="form-control" id="f-sname" placeholder="e.g. Herb">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddSpecies()">Add Species</button>
+    </div>
+  `);
+}
+
+function showEditSpecies(code, name) {
+  openModal('Edit Species — ' + code, `
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input class="form-control" id="f-sname" value="${name}">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditSpecies('${code}')">Save Changes</button>
+    </div>
+  `);
+}
+
+async function submitAddSpecies() {
+  const code = document.getElementById('f-scode').value.trim().toUpperCase();
+  const name = document.getElementById('f-sname').value.trim();
+  if (!code || !name) return alert('Code and name are required');
+  await api('/api/species', 'POST', { code, name });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitEditSpecies(code) {
+  const name = document.getElementById('f-sname').value.trim();
+  if (!name) return alert('Name is required');
+  await api('/api/species/' + code, 'PUT', { name });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteSpecies(code) {
+  if (!confirm('Delete species ' + code + '? This cannot be undone.')) return;
+  const result = await api('/api/species/' + code, 'DELETE');
+  if (result.error) return alert('Error: ' + result.error);
+  await loadAll(); render();
+}
+
 async function exportBackup() {
   try {
     const res = await fetch('/api/backup/export');
@@ -870,7 +965,7 @@ async function exportBackup() {
     const date = new Date().toISOString().split('T')[0];
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `seedvault-backup-${date}.json`; a.click();
+    a.href = url; a.download = 'seedvault-backup-' + date + '.json'; a.click();
     URL.revokeObjectURL(url);
   } catch (err) { alert('Export failed: ' + err.message); }
 }
@@ -882,7 +977,7 @@ async function exportCSV() {
     const date = new Date().toISOString().split('T')[0];
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `seedvault-export-${date}.csv`; a.click();
+    a.href = url; a.download = 'seedvault-export-' + date + '.csv'; a.click();
     URL.revokeObjectURL(url);
   } catch (err) { alert('CSV export failed: ' + err.message); }
 }
@@ -928,7 +1023,7 @@ async function confirmImport(backup) {
     const result = await api('/api/backup/import', 'POST', backup);
     closeModal(); await loadAll(); render();
     setTimeout(() => {
-      alert(`✅ Import complete!\n\nImported:\n  Varieties: ${result.imported.varieties}\n  Seed Lots: ${result.imported.seed_lots}\n  Plants: ${result.imported.plants}\n  Projects: ${result.imported.breeding_projects}\n\nSkipped:\n  Varieties: ${result.skipped.varieties}\n  Seed Lots: ${result.skipped.seed_lots}\n  Plants: ${result.skipped.plants}`);
+      alert('✅ Import complete!\n\nImported:\n  Varieties: ' + result.imported.varieties + '\n  Seed Lots: ' + result.imported.seed_lots + '\n  Plants: ' + result.imported.plants + '\n  Projects: ' + result.imported.breeding_projects + '\n\nSkipped:\n  Varieties: ' + result.skipped.varieties + '\n  Seed Lots: ' + result.skipped.seed_lots + '\n  Plants: ' + result.skipped.plants);
     }, 100);
   } catch (err) { alert('Import failed: ' + err.message); }
 }
