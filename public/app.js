@@ -42,6 +42,9 @@ function navigate(page) {
   document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.page === page);
   });
+  document.querySelectorAll('.nav-gear').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === page);
+  });
   document.getElementById('mobile-menu').classList.add('hidden');
   render();
 }
@@ -65,6 +68,7 @@ function render() {
     case 'plants': main.innerHTML = renderPlants(); break;
     case 'harvest': main.innerHTML = renderHarvest(); break;
     case 'projects': main.innerHTML = renderProjects(); break;
+    case 'settings': main.innerHTML = renderSettings(); break;
   }
 }
 
@@ -363,7 +367,7 @@ function renderPlants() {
         </table></div>`}
     </div>
     ${state.plants.filter(p => p.season_year !== year).length > 0 ? `
-    <div class="card" style="margin-top:20px;">
+    <div class="card">
       <div class="card-title">📚 Previous Seasons</div>
       <div class="table-wrap"><table>
         <thead><tr><th>Designation</th><th>Variety</th><th>Year</th><th>Seed Save</th></tr></thead>
@@ -565,7 +569,7 @@ function renderProjects() {
     ${state.projects.length === 0
       ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🧬</div><p>No breeding projects yet.</p></div></div>`
       : state.projects.map(p => `
-        <div class="card" style="margin-bottom:16px;">
+        <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
@@ -642,8 +646,140 @@ async function submitProject() {
   setTimeout(() => alert('✅ Project created!\nCode: ' + result.code), 100);
 }
 
+// ==================== SETTINGS ====================
+function renderSettings() {
+  return `
+    <div class="page-header">
+      <h1 class="page-title">⚙️ Settings</h1>
+    </div>
+
+    <div class="card">
+      <div class="settings-section-title">💾 Backup & Restore</div>
+
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <h4>Export Backup</h4>
+          <p>Download a full backup of all your data as a JSON file. Store it somewhere safe.</p>
+        </div>
+        <button class="btn btn-primary" onclick="exportBackup()">⬇️ Export Backup</button>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <h4>Import Backup</h4>
+          <p>Restore data from a previously exported JSON backup file. Existing records will not be overwritten.</p>
+        </div>
+        <button class="btn btn-secondary" onclick="triggerImport()">⬆️ Import Backup</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="settings-section-title">ℹ️ About SeedVault</div>
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <h4>Version</h4>
+          <p>SeedVault v1.0.0</p>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <h4>Database Records</h4>
+          <p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season</p>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <h4>Source Code</h4>
+          <p>github.com/Duhato/seedvault — AGPL-3.0 License</p>
+        </div>
+        <a href="https://github.com/Duhato/seedvault" target="_blank" class="btn btn-secondary">View on GitHub</a>
+      </div>
+    </div>
+  `;
+}
+
+async function exportBackup() {
+  try {
+    const res = await fetch('/api/backup/export');
+    const blob = await res.blob();
+    const date = new Date().toISOString().split('T')[0];
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `seedvault-backup-${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Export failed: ' + err.message);
+  }
+}
+
+function triggerImport() {
+  document.getElementById('import-file-input').click();
+}
+
+async function handleImportFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const backup = JSON.parse(text);
+    if (backup.app !== 'SeedVault') return alert('❌ This does not appear to be a valid SeedVault backup file.');
+    const preview = await api('/api/backup/preview', 'POST', backup);
+    openModal('Import Backup — Preview', `
+      <div class="alert alert-warn">⚠️ Review what will be imported. Existing records with the same designation will be skipped.</div>
+      <div style="background:var(--green-bg);border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Backup exported: ${preview.exported_at ? new Date(preview.exported_at).toLocaleString() : 'Unknown'}</div>
+        <table style="width:100%;font-size:0.9rem;">
+          <tr><td style="padding:4px 0;"><strong>Species</strong></td><td>${preview.species}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Varieties</strong></td><td>${preview.varieties}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Seed Lots</strong></td><td>${preview.seed_lots}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Plants</strong></td><td>${preview.plants}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Breeding Projects</strong></td><td>${preview.breeding_projects}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Harvest Log</strong></td><td>${preview.harvest_log}</td></tr>
+        </table>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmImport(${JSON.stringify(backup).split('"').join('&quot;')})">✅ Import</button>
+      </div>
+    `);
+    const backupData = backup;
+    document.querySelector('#modal-body .btn-primary').onclick = () => confirmImport(backupData);
+  } catch (err) {
+    alert('Failed to read backup file: ' + err.message);
+  }
+  e.target.value = '';
+}
+
+async function confirmImport(backup) {
+  try {
+    const result = await api('/api/backup/import', 'POST', backup);
+    closeModal();
+    await loadAll();
+    render();
+    setTimeout(() => {
+      alert(`✅ Import complete!\n\nImported:\n` +
+        `  Varieties: ${result.imported.varieties}\n` +
+        `  Seed Lots: ${result.imported.seed_lots}\n` +
+        `  Plants: ${result.imported.plants}\n` +
+        `  Projects: ${result.imported.breeding_projects}\n\n` +
+        `Skipped (already exist):\n` +
+        `  Varieties: ${result.skipped.varieties}\n` +
+        `  Seed Lots: ${result.skipped.seed_lots}\n` +
+        `  Plants: ${result.skipped.plants}`
+      );
+    }, 100);
+  } catch (err) {
+    alert('Import failed: ' + err.message);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => navigate(btn.dataset.page));
+  });
+  document.querySelectorAll('.nav-gear').forEach(btn => {
     btn.addEventListener('click', () => navigate(btn.dataset.page));
   });
   document.getElementById('hamburger').addEventListener('click', () => {
@@ -653,6 +789,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('modal-overlay').addEventListener('click', e => {
     if (e.target === document.getElementById('modal-overlay')) closeModal();
   });
+  document.getElementById('import-file-input').addEventListener('change', handleImportFile);
   await loadAll();
   render();
 });

@@ -1,3 +1,4 @@
+sudo tee /mnt/ssd-apps/seedvault/app/server.js << 'EOF'
 const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
@@ -15,7 +16,7 @@ const pool = new Pool({
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 async function initDB() {
@@ -328,6 +329,130 @@ app.get('/api/stats', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== BACKUP / EXPORT ====================
+app.get('/api/backup/export', async (req, res) => {
+  try {
+    const [species, varieties, seedLots, plants, projects, harvest] = await Promise.all([
+      pool.query('SELECT * FROM species ORDER BY code'),
+      pool.query('SELECT * FROM varieties ORDER BY code'),
+      pool.query('SELECT * FROM seed_lots ORDER BY designation'),
+      pool.query('SELECT * FROM plants ORDER BY designation'),
+      pool.query('SELECT * FROM breeding_projects ORDER BY code'),
+      pool.query('SELECT * FROM harvest_log ORDER BY harvest_date'),
+    ]);
+    const backup = {
+      app: 'SeedVault',
+      version: '1.0.0',
+      exported_at: new Date().toISOString(),
+      data: {
+        species: species.rows,
+        varieties: varieties.rows,
+        seed_lots: seedLots.rows,
+        plants: plants.rows,
+        breeding_projects: projects.rows,
+        harvest_log: harvest.rows,
+      }
+    };
+    const filename = `seedvault-backup-${new Date().toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(backup);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== BACKUP / IMPORT ====================
+app.post('/api/backup/preview', async (req, res) => {
+  try {
+    const { data } = req.body;
+    res.json({
+      species: data.species?.length || 0,
+      varieties: data.varieties?.length || 0,
+      seed_lots: data.seed_lots?.length || 0,
+      plants: data.plants?.length || 0,
+      breeding_projects: data.breeding_projects?.length || 0,
+      harvest_log: data.harvest_log?.length || 0,
+      exported_at: req.body.exported_at,
+      version: req.body.version,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/backup/import', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { data } = req.body;
+    let imported = { species: 0, varieties: 0, seed_lots: 0, plants: 0, breeding_projects: 0, harvest_log: 0 };
+    let skipped = { species: 0, varieties: 0, seed_lots: 0, plants: 0, breeding_projects: 0, harvest_log: 0 };
+
+    await client.query('BEGIN');
+
+    for (const s of (data.species || [])) {
+      const r = await client.query(
+        'INSERT INTO species (code, name) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING RETURNING *',
+        [s.code, s.name]
+      );
+      r.rowCount > 0 ? imported.species++ : skipped.species++;
+    }
+
+    for (const v of (data.varieties || [])) {
+      const r = await client.query(
+        `INSERT INTO varieties (code, name, species_code, type, description, source, year_acquired)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (code) DO NOTHING RETURNING *`,
+        [v.code, v.name, v.species_code, v.type, v.description, v.source, v.year_acquired]
+      );
+      r.rowCount > 0 ? imported.varieties++ : skipped.varieties++;
+    }
+
+    for (const sl of (data.seed_lots || [])) {
+      const r = await client.query(
+        `INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location, germination_rate, last_tested)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (designation) DO NOTHING RETURNING *`,
+        [sl.designation, sl.variety_code, sl.generation, sl.year_saved, sl.quantity_estimate, sl.mother_designation, sl.father_designation, sl.notes, sl.storage_location, sl.germination_rate, sl.last_tested]
+      );
+      r.rowCount > 0 ? imported.seed_lots++ : skipped.seed_lots++;
+    }
+
+    for (const p of (data.plants || [])) {
+      const r = await client.query(
+        `INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, selected_for_seed, notes, traits)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (designation) DO NOTHING RETURNING *`,
+        [p.designation, p.seed_lot_designation, p.season_year, p.season_type, p.selected_for_seed, p.notes, p.traits]
+      );
+      r.rowCount > 0 ? imported.plants++ : skipped.plants++;
+    }
+
+    for (const bp of (data.breeding_projects || [])) {
+      const r = await client.query(
+        `INSERT INTO breeding_projects (code, name, description, target_traits, status, started_year)
+         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO NOTHING RETURNING *`,
+        [bp.code, bp.name, bp.description, bp.target_traits, bp.status, bp.started_year]
+      );
+      r.rowCount > 0 ? imported.breeding_projects++ : skipped.breeding_projects++;
+    }
+
+    for (const h of (data.harvest_log || [])) {
+      const r = await client.query(
+        `INSERT INTO harvest_log (plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [h.plant_designation, h.harvest_date, h.fruit_length_inches, h.fruit_diameter_inches, h.fruit_weight_oz, h.condition, h.processing_method, h.seed_count, h.notes]
+      );
+      r.rowCount > 0 ? imported.harvest_log++ : skipped.harvest_log++;
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, imported, skipped });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
