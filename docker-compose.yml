@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - /mnt/ssd-apps/seedvault/app/.env
+    environment:
+      POSTGRES_DB: seedvault
+      POSTGRES_USER: seedvault
+      POSTGRES_PASSWORD: seedvault2024
+    volumes:
+      - /mnt/ssd-apps/seedvault/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seedvault"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: seedvault:latest
+    restart: unless-stopped
+    ports:
+      - "8765:3000"
+    env_file:
+      - /mnt/ssd-apps/seedvault/app/.env
+    volumes:
+      - /mnt/ssd-apps/seedvault/app:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
