@@ -15,27 +15,15 @@ function clearToken() {
 async function checkAuth() {
   try {
     const status = await fetch('/api/auth/status').then(r => r.json());
-    if (!status.hasUsers) {
-      showSetup();
-      return false;
-    }
+    if (!status.hasUsers) { showSetup(); return false; }
     const token = getToken();
-    if (!token) {
-      showLogin();
-      return false;
-    }
+    if (!token) { showLogin(); return false; }
     const test = await api('/api/stats');
     if (test.error === 'Unauthorized' || test.error === 'Invalid or expired token') {
-      clearToken();
-      showLogin();
-      return false;
+      clearToken(); showLogin(); return false;
     }
-    showApp();
-    return true;
-  } catch (err) {
-    showLogin();
-    return false;
-  }
+    showApp(); return true;
+  } catch (err) { showLogin(); return false; }
 }
 
 function showLogin() {
@@ -64,30 +52,13 @@ async function submitLogin() {
   const password = document.getElementById('login-password').value;
   const errEl = document.getElementById('login-error');
   errEl.classList.add('hidden');
-  if (!username || !password) {
-    errEl.textContent = 'Please enter username and password';
-    errEl.classList.remove('hidden');
-    return;
-  }
+  if (!username || !password) { errEl.textContent = 'Please enter username and password'; errEl.classList.remove('hidden'); return; }
   try {
-    const result = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    }).then(r => r.json());
-    if (result.error) {
-      errEl.textContent = result.error;
-      errEl.classList.remove('hidden');
-      return;
-    }
+    const result = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }).then(r => r.json());
+    if (result.error) { errEl.textContent = result.error; errEl.classList.remove('hidden'); return; }
     setToken(result.token, result.username);
-    showApp();
-    await loadAll();
-    render();
-  } catch (err) {
-    errEl.textContent = 'Login failed. Please try again.';
-    errEl.classList.remove('hidden');
-  }
+    showApp(); await loadAll(); render();
+  } catch (err) { errEl.textContent = 'Login failed. Please try again.'; errEl.classList.remove('hidden'); }
 }
 
 async function submitSetup() {
@@ -96,46 +67,18 @@ async function submitSetup() {
   const confirm = document.getElementById('setup-confirm').value;
   const errEl = document.getElementById('setup-error');
   errEl.classList.add('hidden');
-  if (!username || !password) {
-    errEl.textContent = 'Please fill in all fields';
-    errEl.classList.remove('hidden');
-    return;
-  }
-  if (password.length < 8) {
-    errEl.textContent = 'Password must be at least 8 characters';
-    errEl.classList.remove('hidden');
-    return;
-  }
-  if (password !== confirm) {
-    errEl.textContent = 'Passwords do not match';
-    errEl.classList.remove('hidden');
-    return;
-  }
+  if (!username || !password) { errEl.textContent = 'Please fill in all fields'; errEl.classList.remove('hidden'); return; }
+  if (password.length < 8) { errEl.textContent = 'Password must be at least 8 characters'; errEl.classList.remove('hidden'); return; }
+  if (password !== confirm) { errEl.textContent = 'Passwords do not match'; errEl.classList.remove('hidden'); return; }
   try {
-    const result = await fetch('/api/auth/setup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    }).then(r => r.json());
-    if (result.error) {
-      errEl.textContent = result.error;
-      errEl.classList.remove('hidden');
-      return;
-    }
+    const result = await fetch('/api/auth/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }).then(r => r.json());
+    if (result.error) { errEl.textContent = result.error; errEl.classList.remove('hidden'); return; }
     setToken(result.token, result.username);
-    showApp();
-    await loadAll();
-    render();
-  } catch (err) {
-    errEl.textContent = 'Setup failed. Please try again.';
-    errEl.classList.remove('hidden');
-  }
+    showApp(); await loadAll(); render();
+  } catch (err) { errEl.textContent = 'Setup failed. Please try again.'; errEl.classList.remove('hidden'); }
 }
 
-function logout() {
-  clearToken();
-  showLogin();
-}
+function logout() { clearToken(); showLogin(); }
 
 // ==================== STATE ====================
 const state = {
@@ -147,34 +90,21 @@ const state = {
   harvest: [],
   species: [],
   stats: {},
-  viability: []
+  viability: [],
+  germination: []
 };
 
-const API = '';
-
 async function api(path, method = 'GET', body = null) {
-  const opts = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + getToken()
-    }
-  };
+  const opts = { method, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() } };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(API + path, opts);
+  const res = await fetch(path, opts);
   return res.json();
 }
 
 async function loadAll() {
-  const [varieties, seedLots, plants, projects, harvest, species, stats, viability] = await Promise.all([
-    api('/api/varieties'),
-    api('/api/seed-lots'),
-    api('/api/plants'),
-    api('/api/projects'),
-    api('/api/harvest'),
-    api('/api/species'),
-    api('/api/stats'),
-    api('/api/viability'),
+  const [varieties, seedLots, plants, projects, harvest, species, stats, viability, germination] = await Promise.all([
+    api('/api/varieties'), api('/api/seed-lots'), api('/api/plants'), api('/api/projects'),
+    api('/api/harvest'), api('/api/species'), api('/api/stats'), api('/api/viability'), api('/api/germination'),
   ]);
   state.varieties = Array.isArray(varieties) ? varieties : [];
   state.seedLots = Array.isArray(seedLots) ? seedLots : [];
@@ -184,16 +114,13 @@ async function loadAll() {
   state.species = Array.isArray(species) ? species : [];
   state.stats = stats || {};
   state.viability = Array.isArray(viability) ? viability : [];
+  state.germination = Array.isArray(germination) ? germination : [];
 }
 
 function navigate(page) {
   state.page = page;
-  document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.page === page);
-  });
-  document.querySelectorAll('.nav-gear').forEach(b => {
-    b.classList.toggle('active', b.dataset.page === page);
-  });
+  document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+  document.querySelectorAll('.nav-gear').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   document.getElementById('mobile-menu').classList.add('hidden');
   render();
 }
@@ -204,9 +131,7 @@ function openModal(title, bodyHTML) {
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
 
-function closeModal() {
-  document.getElementById('modal-overlay').classList.add('hidden');
-}
+function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
 
 function render() {
   const main = document.getElementById('main-content');
@@ -217,34 +142,47 @@ function render() {
     case 'plants': main.innerHTML = renderPlants(); break;
     case 'harvest': main.innerHTML = renderHarvest(); break;
     case 'projects': main.innerHTML = renderProjects(); break;
+    case 'germination': main.innerHTML = renderGermination(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
   }
 }
 
+// ==================== DASHBOARD ====================
 function renderDashboard() {
   const s = state.stats;
   const recentLots = [...state.seedLots].slice(0, 5);
   const selectedPlants = state.plants.filter(p => p.selected_for_seed);
-  const viabilityWarnings = state.viability;
   return `
     <div class="page-header">
       <h1 class="page-title">🌱 SeedVault Dashboard</h1>
       <span style="color:var(--text-muted);font-size:0.9rem;">${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</span>
     </div>
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-number">${s.varieties || 0}</div><div class="stat-label">Varieties</div></div>
-      <div class="stat-card"><div class="stat-number">${s.seedLots || 0}</div><div class="stat-label">Seed Lots</div></div>
-      <div class="stat-card"><div class="stat-number">${s.activePlants || 0}</div><div class="stat-label">Plants This Season</div></div>
-      <div class="stat-card"><div class="stat-number">${s.activeProjects || 0}</div><div class="stat-label">Active Projects</div></div>
+      <div class="stat-card clickable" onclick="navigate('varieties')" title="View Varieties">
+        <div class="stat-number">${s.varieties || 0}</div>
+        <div class="stat-label">Varieties</div>
+      </div>
+      <div class="stat-card clickable" onclick="navigate('seedlots')" title="View Seed Lots">
+        <div class="stat-number">${s.seedLots || 0}</div>
+        <div class="stat-label">Seed Lots</div>
+      </div>
+      <div class="stat-card clickable" onclick="navigate('plants')" title="View Plants">
+        <div class="stat-number">${s.activePlants || 0}</div>
+        <div class="stat-label">Plants This Season</div>
+      </div>
+      <div class="stat-card clickable" onclick="navigate('projects')" title="View Projects">
+        <div class="stat-number">${s.activeProjects || 0}</div>
+        <div class="stat-label">Active Projects</div>
+      </div>
     </div>
-    ${viabilityWarnings.length > 0 ? `
+    ${state.viability.length > 0 ? `
     <div class="card" style="border-left:4px solid #ef4444;">
       <div class="card-title">⚠️ Seed Viability Warnings</div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        ${viabilityWarnings.map(lot => `
+        ${state.viability.map(lot => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${lot.status === 'expired' ? '#fee2e2' : '#fef3c7'};border-radius:6px;">
             <div>
-              <span class="designation">${lot.designation}</span>
+              <span class="designation" style="cursor:pointer;" onclick="navigate('seedlots')">${lot.designation}</span>
               <span style="margin-left:8px;font-size:0.85rem;color:var(--text-muted);">${lot.variety_name}</span>
             </div>
             <span style="font-size:0.85rem;font-weight:700;color:${lot.status === 'expired' ? '#991b1b' : '#92400e'};">
@@ -260,7 +198,7 @@ function renderDashboard() {
         ${recentLots.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No seed lots yet.</p>' : `
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${recentLots.map(lot => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;">
+            <div class="clickable-row" onclick="navigate('seedlots')" style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
               <span class="designation">${lot.designation}</span>
               <span class="gen-badge">G${lot.generation}</span>
             </div>
@@ -272,7 +210,7 @@ function renderDashboard() {
         ${selectedPlants.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No plants flagged yet.</p>' : `
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${selectedPlants.map(p => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;">
+            <div class="clickable-row" onclick="navigate('plants')" style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
               <span class="designation">${p.designation}</span>
               <span class="seed-star">⭐</span>
             </div>
@@ -285,7 +223,7 @@ function renderDashboard() {
       ${state.projects.filter(p => p.status === 'active').length === 0
         ? '<p style="color:var(--text-muted);font-size:0.9rem;">No active breeding projects.</p>'
         : state.projects.filter(p => p.status === 'active').map(p => `
-          <div style="padding:12px;background:var(--green-bg);border-radius:6px;margin-bottom:8px;">
+          <div class="clickable-row" onclick="navigate('projects')" style="padding:12px;background:var(--green-bg);border-radius:6px;margin-bottom:8px;cursor:pointer;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <strong>${p.name}</strong>
               <span class="designation">${p.code}</span>
@@ -297,6 +235,7 @@ function renderDashboard() {
   `;
 }
 
+// ==================== VARIETIES ====================
 function renderVarieties() {
   return `
     <div class="page-header">
@@ -332,10 +271,7 @@ function renderVarieties() {
 }
 
 function showAddVariety() { openModal('Add New Variety', varietyForm(null)); }
-function showEditVariety(code) {
-  const v = state.varieties.find(x => x.code === code);
-  openModal('Edit Variety — ' + code, varietyForm(v));
-}
+function showEditVariety(code) { openModal('Edit Variety — ' + code, varietyForm(state.varieties.find(x => x.code === code))); }
 
 function varietyForm(v) {
   return `
@@ -395,10 +331,10 @@ async function submitEditVariety(code) {
 
 async function deleteVariety(code) {
   if (!confirm('Delete variety ' + code + '? This cannot be undone.')) return;
-  await api('/api/varieties/' + code, 'DELETE');
-  await loadAll(); render();
+  await api('/api/varieties/' + code, 'DELETE'); await loadAll(); render();
 }
 
+// ==================== SEED LOTS ====================
 function renderSeedLots() {
   const currentYear = new Date().getFullYear();
   const viabilityYears = { CUC: 5, TOM: 4, PEP: 3 };
@@ -415,8 +351,7 @@ function renderSeedLots() {
           <tbody>
             ${state.seedLots.map(lot => {
               const maxYears = viabilityYears[lot.species_code] || 3;
-              const age = currentYear - lot.year_saved;
-              const yearsLeft = maxYears - age;
+              const yearsLeft = maxYears - (currentYear - lot.year_saved);
               let viabilityBadge = '<span style="color:#16a34a;font-weight:600;">🟢 Good</span>';
               if (yearsLeft <= 0) viabilityBadge = '<span style="color:#dc2626;font-weight:600;">🔴 Expired</span>';
               else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#d97706;font-weight:600;">🟡 Expiring</span>';
@@ -443,10 +378,7 @@ function renderSeedLots() {
 }
 
 function showAddSeedLot() { openModal('Add Seed Lot', seedLotForm(null)); }
-function showEditSeedLot(designation) {
-  const lot = state.seedLots.find(l => l.designation === designation);
-  openModal('Edit Seed Lot — ' + designation, seedLotForm(lot));
-}
+function showEditSeedLot(designation) { openModal('Edit Seed Lot — ' + designation, seedLotForm(state.seedLots.find(l => l.designation === designation))); }
 
 function seedLotForm(lot) {
   return `
@@ -525,10 +457,10 @@ async function submitEditSeedLot(designation) {
 
 async function deleteSeedLot(designation) {
   if (!confirm('Delete seed lot ' + designation + '? This cannot be undone.')) return;
-  await api('/api/seed-lots/' + designation, 'DELETE');
-  await loadAll(); render();
+  await api('/api/seed-lots/' + designation, 'DELETE'); await loadAll(); render();
 }
 
+// ==================== PLANTS ====================
 function renderPlants() {
   const year = new Date().getFullYear();
   const thisYear = state.plants.filter(p => p.season_year === year);
@@ -649,9 +581,8 @@ function showEditPlant(designation) {
 
 async function submitPlants() {
   const seed_lot_designation = document.getElementById('f-lot').value;
-  const count = document.getElementById('f-count').value;
   if (!seed_lot_designation) return alert('Select a seed lot');
-  const result = await api('/api/plants', 'POST', { seed_lot_designation, season_year: new Date().getFullYear(), season_type: document.getElementById('f-season').value, count: parseInt(count), notes: document.getElementById('f-notes').value });
+  const result = await api('/api/plants', 'POST', { seed_lot_designation, season_year: new Date().getFullYear(), season_type: document.getElementById('f-season').value, count: parseInt(document.getElementById('f-count').value), notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ ' + result.length + ' plant(s) added!\nFirst: ' + result[0].designation), 100);
 }
@@ -670,10 +601,10 @@ async function toggleSeedSelect(designation, selected) {
 
 async function deletePlant(designation) {
   if (!confirm('Delete plant ' + designation + '? This cannot be undone.')) return;
-  await api('/api/plants/' + designation, 'DELETE');
-  await loadAll(); render();
+  await api('/api/plants/' + designation, 'DELETE'); await loadAll(); render();
 }
 
+// ==================== HARVEST ====================
 function renderHarvest() {
   return `
     <div class="page-header">
@@ -770,10 +701,7 @@ function harvestForm(h) {
 }
 
 function showAddHarvest() { openModal('Log Seed Harvest', harvestForm(null)); }
-function showEditHarvest(id) {
-  const h = state.harvest.find(x => x.id === id);
-  openModal('Edit Harvest Record', harvestForm(h));
-}
+function showEditHarvest(id) { openModal('Edit Harvest Record', harvestForm(state.harvest.find(x => x.id === id))); }
 
 async function submitHarvest() {
   const plant_designation = document.getElementById('f-plant').value;
@@ -789,10 +717,168 @@ async function submitEditHarvest(id) {
 
 async function deleteHarvest(id) {
   if (!confirm('Delete this harvest record? This cannot be undone.')) return;
-  await api('/api/harvest/' + id, 'DELETE');
-  await loadAll(); render();
+  await api('/api/harvest/' + id, 'DELETE'); await loadAll(); render();
 }
 
+// ==================== GERMINATION ====================
+function renderGermination() {
+  return `
+    <div class="page-header">
+      <h1 class="page-title">🌿 Germination</h1>
+      <button class="btn btn-primary" onclick="showAddGermination()">+ Start Test</button>
+    </div>
+    <div class="card">
+      ${state.germination.length === 0
+        ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>No germination tests yet. Start one to track your seeds!</p></div>`
+        : `<div class="table-wrap"><table>
+          <thead><tr><th>Seed Lot</th><th>Variety</th><th>Started</th><th>Planted</th><th>Germinated</th><th>Rate</th><th>Days</th><th>Thinned</th><th>Remaining</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${state.germination.map(g => {
+              const rate = g.seeds_germinated !== null && g.seeds_planted ? Math.round((g.seeds_germinated / g.seeds_planted) * 100) : null;
+              return `<tr>
+                <td><span class="designation" style="font-size:0.75rem;">${g.seed_lot_designation}</span></td>
+                <td>${g.variety_name || '—'}</td>
+                <td>${g.date_started ? new Date(g.date_started).toLocaleDateString() : '—'}</td>
+                <td>${g.seeds_planted}</td>
+                <td>${g.seeds_germinated !== null ? g.seeds_germinated : '—'}</td>
+                <td>${rate !== null ? `<span class="gen-badge" style="background:${rate >= 80 ? 'var(--green-mid)' : rate >= 50 ? '#d97706' : '#dc2626'}">${rate}%</span>` : '—'}</td>
+                <td>${g.days_to_germination !== null ? g.days_to_germination + ' days' : '—'}</td>
+                <td>${g.seeds_thinned !== null ? g.seeds_thinned : '—'}</td>
+                <td>${g.plants_remaining !== null ? g.plants_remaining : '—'}</td>
+                <td style="display:flex;gap:4px;flex-wrap:wrap;">
+                  ${g.seeds_germinated === null ? `<button class="btn btn-primary btn-sm" onclick="showUpdateGermination(${g.id})">📊 Update</button>` : ''}
+                  ${g.seeds_thinned === null && g.seeds_germinated !== null ? `<button class="btn btn-brown btn-sm" onclick="showThinningLog(${g.id})">✂️ Thinning</button>` : ''}
+                  <button class="btn btn-danger btn-sm" onclick="deleteGermination(${g.id})">🗑️</button>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>`}
+    </div>
+  `;
+}
+
+function showAddGermination() {
+  openModal('Start Germination Test', `
+    <div class="alert alert-info">Track seeds from planting through germination and thinning.</div>
+    <div class="form-group">
+      <label class="form-label">Seed Lot *</label>
+      <select class="form-control" id="f-lot">
+        <option value="">Select seed lot...</option>
+        ${state.seedLots.map(l => `<option value="${l.designation}">${l.designation} — ${l.variety_name || l.variety_code}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Date Started *</label>
+        <input class="form-control" id="f-date" type="date" value="${new Date().toISOString().split('T')[0]}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Seeds Planted *</label>
+        <input class="form-control" id="f-planted" type="number" min="1" placeholder="e.g. 8">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" id="f-notes" rows="2" placeholder="Soil mix, indoor/outdoor, conditions..."></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitGermination()">Start Test</button>
+    </div>
+  `);
+}
+
+function showUpdateGermination(id) {
+  const g = state.germination.find(x => x.id === id);
+  openModal('Update Germination — ' + g.seed_lot_designation, `
+    <div style="background:var(--green-bg);padding:12px;border-radius:6px;margin-bottom:16px;">
+      <strong>${g.seeds_planted} seeds planted</strong> on ${new Date(g.date_started).toLocaleDateString()}
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Seeds Germinated *</label>
+        <input class="form-control" id="f-germinated" type="number" min="0" max="${g.seeds_planted}" placeholder="How many came up?">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date Germinated *</label>
+        <input class="form-control" id="f-dategerm" type="date" value="${new Date().toISOString().split('T')[0]}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" id="f-notes" rows="2">${g.notes || ''}</textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitUpdateGermination(${id})">Save Results</button>
+    </div>
+  `);
+}
+
+function showThinningLog(id) {
+  const g = state.germination.find(x => x.id === id);
+  openModal('Log Thinning — ' + g.seed_lot_designation, `
+    <div style="background:var(--green-bg);padding:12px;border-radius:6px;margin-bottom:16px;">
+      <strong>${g.seeds_germinated} of ${g.seeds_planted} germinated</strong> — log thinning below
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Seeds Thinned *</label>
+        <input class="form-control" id="f-thinned" type="number" min="0" max="${g.seeds_germinated}" placeholder="How many removed?">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date Thinned</label>
+        <input class="form-control" id="f-datethinned" type="date" value="${new Date().toISOString().split('T')[0]}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Plants Remaining *</label>
+      <input class="form-control" id="f-remaining" type="number" min="0" placeholder="How many kept?">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" id="f-notes" rows="2" placeholder="Kept strongest seedling from each pot..."></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitThinning(${id})">Log Thinning</button>
+    </div>
+  `);
+}
+
+async function submitGermination() {
+  const seed_lot_designation = document.getElementById('f-lot').value;
+  const date_started = document.getElementById('f-date').value;
+  const seeds_planted = document.getElementById('f-planted').value;
+  if (!seed_lot_designation || !date_started || !seeds_planted) return alert('Seed lot, date and seeds planted are required');
+  await api('/api/germination', 'POST', { seed_lot_designation, date_started, seeds_planted: parseInt(seeds_planted), notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitUpdateGermination(id) {
+  const seeds_germinated = document.getElementById('f-germinated').value;
+  const date_germinated = document.getElementById('f-dategerm').value;
+  if (!seeds_germinated || !date_germinated) return alert('Seeds germinated and date are required');
+  await api('/api/germination/' + id, 'PUT', { seeds_germinated: parseInt(seeds_germinated), date_germinated, notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitThinning(id) {
+  const g = state.germination.find(x => x.id === id);
+  const seeds_thinned = document.getElementById('f-thinned').value;
+  const plants_remaining = document.getElementById('f-remaining').value;
+  if (!seeds_thinned || !plants_remaining) return alert('Seeds thinned and plants remaining are required');
+  await api('/api/germination/' + id, 'PUT', { seeds_germinated: g.seeds_germinated, date_germinated: g.date_germinated ? g.date_germinated.split('T')[0] : null, seeds_thinned: parseInt(seeds_thinned), date_thinned: document.getElementById('f-datethinned').value, plants_remaining: parseInt(plants_remaining), notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteGermination(id) {
+  if (!confirm('Delete this germination test? This cannot be undone.')) return;
+  await api('/api/germination/' + id, 'DELETE'); await loadAll(); render();
+}
+
+// ==================== BREEDING PROJECTS ====================
 function renderProjects() {
   return `
     <div class="page-header">
@@ -829,9 +915,7 @@ function renderProjects() {
             <div style="font-size:0.85rem;font-weight:700;color:var(--green-dark);margin-bottom:8px;">Plants in this project:</div>
             ${state.plants.filter(pl => pl.designation.startsWith(p.code)).length === 0
               ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants logged yet.</p>'
-              : `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-                ${state.plants.filter(pl => pl.designation.startsWith(p.code)).map(pl => `<span class="designation">${pl.designation}</span>`).join('')}
-              </div>`}
+              : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${state.plants.filter(pl => pl.designation.startsWith(p.code)).map(pl => `<span class="designation">${pl.designation}</span>`).join('')}</div>`}
           </div>
         </div>
       `).join('')}
@@ -853,8 +937,7 @@ function projectForm(p) {
         <label class="form-label">Started Year</label>
         <input class="form-control" id="f-pyear" type="number" value="${p ? p.started_year : new Date().getFullYear()}">
       </div>
-      ${p ? `
-      <div class="form-group">
+      ${p ? `<div class="form-group">
         <label class="form-label">Status</label>
         <select class="form-control" id="f-status">
           <option value="active" ${p.status === 'active' ? 'selected' : ''}>Active</option>
@@ -875,10 +958,7 @@ function projectForm(p) {
 }
 
 function showAddProject() { openModal('New Breeding Project', projectForm(null)); }
-function showEditProject(code) {
-  const p = state.projects.find(x => x.code === code);
-  openModal('Edit Project — ' + code, projectForm(p));
-}
+function showEditProject(code) { openModal('Edit Project — ' + code, projectForm(state.projects.find(x => x.code === code))); }
 
 async function submitProject() {
   const name = document.getElementById('f-pname').value.trim();
@@ -899,15 +979,13 @@ async function submitEditProject(code) {
 
 async function deleteProject(code) {
   if (!confirm('Delete project ' + code + '? This cannot be undone.')) return;
-  await api('/api/projects/' + code, 'DELETE');
-  await loadAll(); render();
+  await api('/api/projects/' + code, 'DELETE'); await loadAll(); render();
 }
 
+// ==================== SETTINGS ====================
 function renderSettings() {
   return `
-    <div class="page-header">
-      <h1 class="page-title">⚙️ Settings</h1>
-    </div>
+    <div class="page-header"><h1 class="page-title">⚙️ Settings</h1></div>
     <div class="card">
       <div class="settings-section-title">💾 Backup & Restore</div>
       <div class="settings-row">
@@ -959,12 +1037,8 @@ function renderSettings() {
     </div>
     <div class="card">
       <div class="settings-section-title">ℹ️ About SeedVault</div>
-      <div class="settings-row">
-        <div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.0.0</p></div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-info"><h4>Database Records</h4><p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season</p></div>
-      </div>
+      <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.0.0</p></div></div>
+      <div class="settings-row"><div class="settings-row-info"><h4>Database Records</h4><p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season</p></div></div>
       <div class="settings-row">
         <div class="settings-row-info"><h4>Source Code</h4><p>github.com/Duhato/seedvault — AGPL-3.0 License</p></div>
         <a href="https://github.com/Duhato/seedvault" target="_blank" class="btn btn-secondary">View on GitHub</a>
@@ -975,18 +1049,9 @@ function renderSettings() {
 
 function showChangePassword() {
   openModal('Change Password', `
-    <div class="form-group">
-      <label class="form-label">Current Password</label>
-      <input class="form-control" id="f-curpw" type="password">
-    </div>
-    <div class="form-group">
-      <label class="form-label">New Password</label>
-      <input class="form-control" id="f-newpw" type="password" placeholder="Min 8 characters">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Confirm New Password</label>
-      <input class="form-control" id="f-confirmpw" type="password">
-    </div>
+    <div class="form-group"><label class="form-label">Current Password</label><input class="form-control" id="f-curpw" type="password"></div>
+    <div class="form-group"><label class="form-label">New Password</label><input class="form-control" id="f-newpw" type="password" placeholder="Min 8 characters"></div>
+    <div class="form-group"><label class="form-label">Confirm New Password</label><input class="form-control" id="f-confirmpw" type="password"></div>
     <div id="pw-error" class="alert alert-danger hidden"></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -1005,21 +1070,14 @@ async function submitChangePassword() {
   if (newPassword !== confirm) { errEl.textContent = 'Passwords do not match'; errEl.classList.remove('hidden'); return; }
   const result = await api('/api/auth/change-password', 'POST', { currentPassword, newPassword });
   if (result.error) { errEl.textContent = result.error; errEl.classList.remove('hidden'); return; }
-  closeModal();
-  alert('✅ Password changed successfully!');
+  closeModal(); alert('✅ Password changed successfully!');
 }
 
 function showAddSpecies() {
   openModal('Add Species', `
     <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Code * (e.g. HERB)</label>
-        <input class="form-control" id="f-scode" placeholder="e.g. HERB" maxlength="10">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Name *</label>
-        <input class="form-control" id="f-sname" placeholder="e.g. Herb">
-      </div>
+      <div class="form-group"><label class="form-label">Code * (e.g. HERB)</label><input class="form-control" id="f-scode" placeholder="e.g. HERB" maxlength="10"></div>
+      <div class="form-group"><label class="form-label">Name *</label><input class="form-control" id="f-sname" placeholder="e.g. Herb"></div>
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -1030,10 +1088,7 @@ function showAddSpecies() {
 
 function showEditSpecies(code, name) {
   openModal('Edit Species — ' + code, `
-    <div class="form-group">
-      <label class="form-label">Name *</label>
-      <input class="form-control" id="f-sname" value="${name}">
-    </div>
+    <div class="form-group"><label class="form-label">Name *</label><input class="form-control" id="f-sname" value="${name}"></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitEditSpecies('${code}')">Save Changes</button>
@@ -1045,15 +1100,13 @@ async function submitAddSpecies() {
   const code = document.getElementById('f-scode').value.trim().toUpperCase();
   const name = document.getElementById('f-sname').value.trim();
   if (!code || !name) return alert('Code and name are required');
-  await api('/api/species', 'POST', { code, name });
-  closeModal(); await loadAll(); render();
+  await api('/api/species', 'POST', { code, name }); closeModal(); await loadAll(); render();
 }
 
 async function submitEditSpecies(code) {
   const name = document.getElementById('f-sname').value.trim();
   if (!name) return alert('Name is required');
-  await api('/api/species/' + code, 'PUT', { name });
-  closeModal(); await loadAll(); render();
+  await api('/api/species/' + code, 'PUT', { name }); closeModal(); await loadAll(); render();
 }
 
 async function deleteSpecies(code) {
@@ -1067,10 +1120,9 @@ async function exportBackup() {
   try {
     const res = await fetch('/api/backup/export', { headers: { 'Authorization': 'Bearer ' + getToken() } });
     const blob = await res.blob();
-    const date = new Date().toISOString().split('T')[0];
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'seedvault-backup-' + date + '.json'; a.click();
+    a.href = url; a.download = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.json'; a.click();
     URL.revokeObjectURL(url);
   } catch (err) { alert('Export failed: ' + err.message); }
 }
@@ -1079,10 +1131,9 @@ async function exportCSV() {
   try {
     const res = await fetch('/api/backup/export-csv', { headers: { 'Authorization': 'Bearer ' + getToken() } });
     const blob = await res.blob();
-    const date = new Date().toISOString().split('T')[0];
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'seedvault-export-' + date + '.csv'; a.click();
+    a.href = url; a.download = 'seedvault-export-' + new Date().toISOString().split('T')[0] + '.csv'; a.click();
     URL.revokeObjectURL(url);
   } catch (err) { alert('CSV export failed: ' + err.message); }
 }
@@ -1093,8 +1144,7 @@ async function handleImportFile(e) {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const text = await file.text();
-    const backup = JSON.parse(text);
+    const backup = JSON.parse(await file.text());
     if (backup.app !== 'SeedVault') return alert('❌ This does not appear to be a valid SeedVault backup file.');
     const preview = await api('/api/backup/preview', 'POST', backup);
     const backupData = backup;
@@ -1103,11 +1153,10 @@ async function handleImportFile(e) {
       <div style="background:var(--green-bg);border-radius:8px;padding:16px;margin-bottom:16px;">
         <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Exported: ${preview.exported_at ? new Date(preview.exported_at).toLocaleString() : 'Unknown'}</div>
         <table style="width:100%;font-size:0.9rem;">
-          <tr><td style="padding:4px 0;"><strong>Species</strong></td><td>${preview.species}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Varieties</strong></td><td>${preview.varieties}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Seed Lots</strong></td><td>${preview.seed_lots}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Plants</strong></td><td>${preview.plants}</td></tr>
-          <tr><td style="padding:4px 0;"><strong>Breeding Projects</strong></td><td>${preview.breeding_projects}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Projects</strong></td><td>${preview.breeding_projects}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Harvest Log</strong></td><td>${preview.harvest_log}</td></tr>
         </table>
       </div>
@@ -1125,37 +1174,19 @@ async function confirmImport(backup) {
   try {
     const result = await api('/api/backup/import', 'POST', backup);
     closeModal(); await loadAll(); render();
-    setTimeout(() => alert('✅ Import complete!\n\nImported:\n  Varieties: ' + result.imported.varieties + '\n  Seed Lots: ' + result.imported.seed_lots + '\n  Plants: ' + result.imported.plants + '\n  Projects: ' + result.imported.breeding_projects + '\n\nSkipped:\n  Varieties: ' + result.skipped.varieties + '\n  Seed Lots: ' + result.skipped.seed_lots + '\n  Plants: ' + result.skipped.plants), 100);
+    setTimeout(() => alert('✅ Import complete!\n\nImported:\n  Varieties: ' + result.imported.varieties + '\n  Seed Lots: ' + result.imported.seed_lots + '\n  Plants: ' + result.imported.plants), 100);
   } catch (err) { alert('Import failed: ' + err.message); }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => navigate(btn.dataset.page));
-  });
-  document.querySelectorAll('.nav-gear').forEach(btn => {
-    btn.addEventListener('click', () => navigate(btn.dataset.page));
-  });
-  document.getElementById('hamburger').addEventListener('click', () => {
-    document.getElementById('mobile-menu').classList.toggle('hidden');
-  });
+  document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.page)));
+  document.querySelectorAll('.nav-gear').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.page)));
+  document.getElementById('hamburger').addEventListener('click', () => document.getElementById('mobile-menu').classList.toggle('hidden'));
   document.getElementById('modal-close').addEventListener('click', closeModal);
-  document.getElementById('modal-overlay').addEventListener('click', e => {
-    if (e.target === document.getElementById('modal-overlay')) closeModal();
-  });
+  document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target === document.getElementById('modal-overlay')) closeModal(); });
   document.getElementById('import-file-input').addEventListener('change', handleImportFile);
-
-  // Handle enter key on login form
-  document.getElementById('login-password').addEventListener('keydown', e => {
-    if (e.key === 'Enter') submitLogin();
-  });
-  document.getElementById('login-username').addEventListener('keydown', e => {
-    if (e.key === 'Enter') submitLogin();
-  });
-
+  document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
+  document.getElementById('login-username').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
   await checkAuth();
-  if (getToken()) {
-    await loadAll();
-    render();
-  }
+  if (getToken()) { await loadAll(); render(); }
 });

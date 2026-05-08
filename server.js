@@ -4,6 +4,7 @@ const path = require('path');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,8 +19,55 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || 'seedvault',
 });
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use('/api/', apiLimiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/setup', authLimiter);
+
+function sanitizeString(str, maxLen = 255) {
+  if (str === null || str === undefined) return null;
+  return String(str).trim().slice(0, maxLen);
+}
+
+function validateCode(code, maxLen = 20) {
+  if (!code) return null;
+  return String(code).trim().toUpperCase().replace(/[^A-Z0-9-_]/g, '').slice(0, maxLen);
+}
+
+function validateYear(year) {
+  const y = parseInt(year);
+  if (isNaN(y) || y < 1900 || y > 2100) return null;
+  return y;
+}
+
+function validateInt(val, min = 0, max = 999999) {
+  const n = parseInt(val);
+  if (isNaN(n) || n < min || n > max) return null;
+  return n;
+}
+
+function validateDecimal(val, min = 0, max = 9999) {
+  const n = parseFloat(val);
+  if (isNaN(n) || n < min || n > max) return null;
+  return n;
+}
 
 async function initDB() {
   const client = await pool.connect();
@@ -32,14 +80,12 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW(),
         last_login TIMESTAMP
       );
-
       CREATE TABLE IF NOT EXISTS species (
         id SERIAL PRIMARY KEY,
         code VARCHAR(10) UNIQUE NOT NULL,
         name VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS varieties (
         id SERIAL PRIMARY KEY,
         code VARCHAR(20) UNIQUE NOT NULL,
@@ -51,7 +97,6 @@ async function initDB() {
         year_acquired INTEGER,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS seed_lots (
         id SERIAL PRIMARY KEY,
         designation VARCHAR(50) UNIQUE NOT NULL,
@@ -67,7 +112,6 @@ async function initDB() {
         last_tested DATE,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS plants (
         id SERIAL PRIMARY KEY,
         designation VARCHAR(50) UNIQUE NOT NULL,
@@ -79,7 +123,6 @@ async function initDB() {
         traits JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS breeding_projects (
         id SERIAL PRIMARY KEY,
         code VARCHAR(20) UNIQUE NOT NULL,
@@ -90,7 +133,6 @@ async function initDB() {
         started_year INTEGER,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
       CREATE TABLE IF NOT EXISTS harvest_log (
         id SERIAL PRIMARY KEY,
         plant_designation VARCHAR(50) REFERENCES plants(designation),
@@ -104,20 +146,28 @@ async function initDB() {
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
-
+      CREATE TABLE IF NOT EXISTS germination_tests (
+        id SERIAL PRIMARY KEY,
+        seed_lot_designation VARCHAR(50) REFERENCES seed_lots(designation),
+        date_started DATE NOT NULL,
+        seeds_planted INTEGER NOT NULL,
+        seeds_germinated INTEGER,
+        date_germinated DATE,
+        days_to_germination INTEGER,
+        seeds_thinned INTEGER,
+        date_thinned DATE,
+        plants_remaining INTEGER,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
       INSERT INTO species (code, name) VALUES
-        ('CUC', 'Cucumber'),
-        ('TOM', 'Tomato'),
-        ('PEP', 'Pepper')
+        ('CUC', 'Cucumber'),('TOM', 'Tomato'),('PEP', 'Pepper')
       ON CONFLICT (code) DO NOTHING;
     `);
     console.log('Database initialized successfully');
-  } finally {
-    client.release();
-  }
+  } finally { client.release(); }
 }
 
-// ==================== AUTH MIDDLEWARE ====================
 function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
@@ -125,42 +175,36 @@ function authMiddleware(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
+  } catch (err) { res.status(401).json({ error: 'Invalid or expired token' }); }
 }
 
-// ==================== AUTH ROUTES ====================
 app.get('/api/auth/status', async (req, res) => {
   try {
     const result = await pool.query('SELECT COUNT(*) FROM users');
     res.json({ hasUsers: parseInt(result.rows[0].count) > 0 });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 app.post('/api/auth/setup', async (req, res) => {
   try {
     const count = await pool.query('SELECT COUNT(*) FROM users');
-    if (parseInt(count.rows[0].count) > 0) {
-      return res.status(400).json({ error: 'Setup already complete' });
-    }
-    const { username, password } = req.body;
+    if (parseInt(count.rows[0].count) > 0) return res.status(400).json({ error: 'Setup already complete' });
+    const username = sanitizeString(req.body.username, 50);
+    const { password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     const hash = await bcrypt.hash(password, 12);
     await pool.query('INSERT INTO users (username, password_hash) VALUES ($1, $2)', [username, hash]);
     const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: SESSION_DAYS + 'd' });
     res.json({ success: true, token, username });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const username = sanitizeString(req.body.username, 50);
+    const { password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
     const result = await pool.query('SELECT * FROM users WHERE username=$1', [username]);
     if (!result.rows.length) return res.status(401).json({ error: 'Invalid username or password' });
@@ -170,319 +214,235 @@ app.post('/api/auth/login', async (req, res) => {
     await pool.query('UPDATE users SET last_login=NOW() WHERE id=$1', [user.id]);
     const token = jwt.sign({ username: user.username }, JWT_SECRET, { expiresIn: SESSION_DAYS + 'd' });
     res.json({ success: true, token, username: user.username });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 app.post('/api/auth/change-password', authMiddleware, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    if (newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    if (!newPassword || newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     const result = await pool.query('SELECT * FROM users WHERE username=$1', [req.user.username]);
-    const user = result.rows[0];
-    const valid = await bcrypt.compare(currentPassword, user.password_hash);
+    const valid = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
     if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
     const hash = await bcrypt.hash(newPassword, 12);
     await pool.query('UPDATE users SET password_hash=$1 WHERE username=$2', [hash, req.user.username]);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== PROTECTED STATIC FILES ====================
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
+app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==================== SPECIES ====================
 app.get('/api/species', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM species ORDER BY name');
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json((await pool.query('SELECT * FROM species ORDER BY name')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.post('/api/species', authMiddleware, async (req, res) => {
-  const { code, name } = req.body;
-  try {
-    const result = await pool.query(
-      'INSERT INTO species (code, name) VALUES ($1, $2) RETURNING *',
-      [code.toUpperCase(), name]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const code = validateCode(req.body.code, 10);
+  const name = sanitizeString(req.body.name, 100);
+  if (!code || !name) return res.status(400).json({ error: 'Valid code and name required' });
+  try { res.json((await pool.query('INSERT INTO species (code, name) VALUES ($1, $2) RETURNING *', [code, name])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.put('/api/species/:code', authMiddleware, async (req, res) => {
-  const { code } = req.params;
-  const { name } = req.body;
-  try {
-    const result = await pool.query('UPDATE species SET name=$1 WHERE code=$2 RETURNING *', [name, code]);
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const code = validateCode(req.params.code, 10);
+  const name = sanitizeString(req.body.name, 100);
+  if (!code || !name) return res.status(400).json({ error: 'Valid name required' });
+  try { res.json((await pool.query('UPDATE species SET name=$1 WHERE code=$2 RETURNING *', [name, code])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.delete('/api/species/:code', authMiddleware, async (req, res) => {
-  const { code } = req.params;
+  const code = validateCode(req.params.code, 10);
+  if (!code) return res.status(400).json({ error: 'Invalid code' });
   try {
     const check = await pool.query('SELECT COUNT(*) FROM varieties WHERE species_code=$1', [code]);
-    if (parseInt(check.rows[0].count) > 0) {
-      return res.status(400).json({ error: 'Cannot delete species with existing varieties' });
-    }
+    if (parseInt(check.rows[0].count) > 0) return res.status(400).json({ error: 'Cannot delete species with existing varieties' });
     await pool.query('DELETE FROM species WHERE code=$1', [code]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== VARIETIES ====================
 app.get('/api/varieties', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT v.*, s.name as species_name 
-      FROM varieties v
-      LEFT JOIN species s ON v.species_code = s.code
-      ORDER BY v.species_code, v.name
-    `);
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json((await pool.query('SELECT v.*, s.name as species_name FROM varieties v LEFT JOIN species s ON v.species_code = s.code ORDER BY v.species_code, v.name')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.post('/api/varieties', authMiddleware, async (req, res) => {
-  const { name, species_code, type, description, source, year_acquired } = req.body;
+  const name = sanitizeString(req.body.name, 100);
+  const species_code = validateCode(req.body.species_code, 10);
+  if (!name || !species_code) return res.status(400).json({ error: 'Name and species required' });
   try {
     const abbrev = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 4);
-    const code = `${species_code}-${abbrev}`;
-    const result = await pool.query(
-      `INSERT INTO varieties (code, name, species_code, type, description, source, year_acquired)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [code, name, species_code, type || 'OP', description, source, year_acquired]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const code = species_code + '-' + abbrev;
+    res.json((await pool.query('INSERT INTO varieties (code, name, species_code, type, description, source, year_acquired) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [code, name, species_code, sanitizeString(req.body.type, 20) || 'OP', sanitizeString(req.body.description, 2000), sanitizeString(req.body.source, 100), validateYear(req.body.year_acquired)])).rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.put('/api/varieties/:code', authMiddleware, async (req, res) => {
-  const { code } = req.params;
-  const { name, type, description, source, year_acquired } = req.body;
-  try {
-    const result = await pool.query(
-      `UPDATE varieties SET name=$1, type=$2, description=$3, source=$4, year_acquired=$5 WHERE code=$6 RETURNING *`,
-      [name, type, description, source, year_acquired, code]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const code = validateCode(req.params.code, 20);
+  const name = sanitizeString(req.body.name, 100);
+  if (!code || !name) return res.status(400).json({ error: 'Valid name required' });
+  try { res.json((await pool.query('UPDATE varieties SET name=$1, type=$2, description=$3, source=$4, year_acquired=$5 WHERE code=$6 RETURNING *', [name, sanitizeString(req.body.type, 20), sanitizeString(req.body.description, 2000), sanitizeString(req.body.source, 100), validateYear(req.body.year_acquired), code])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.delete('/api/varieties/:code', authMiddleware, async (req, res) => {
-  const { code } = req.params;
-  try {
-    await pool.query('DELETE FROM varieties WHERE code=$1', [code]);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const code = validateCode(req.params.code, 20);
+  if (!code) return res.status(400).json({ error: 'Invalid code' });
+  try { await pool.query('DELETE FROM varieties WHERE code=$1', [code]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== SEED LOTS ====================
 app.get('/api/seed-lots', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT sl.*, v.name as variety_name, v.species_code
-      FROM seed_lots sl
-      LEFT JOIN varieties v ON sl.variety_code = v.code
-      ORDER BY sl.year_saved DESC, sl.designation
-    `);
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json((await pool.query('SELECT sl.*, v.name as variety_name, v.species_code FROM seed_lots sl LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY sl.year_saved DESC, sl.designation')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.post('/api/seed-lots', authMiddleware, async (req, res) => {
-  const { variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location } = req.body;
+  const variety_code = validateCode(req.body.variety_code, 20);
+  const generation = validateInt(req.body.generation, 1, 100);
+  const year_saved = validateYear(req.body.year_saved);
+  if (!variety_code || !generation || !year_saved) return res.status(400).json({ error: 'Variety, generation and year required' });
   try {
-    const designation = `${variety_code}-G${generation}-${year_saved}`;
-    const result = await pool.query(
-      `INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const designation = variety_code + '-G' + generation + '-' + year_saved;
+    res.json((await pool.query('INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', [designation, variety_code, generation, year_saved, validateInt(req.body.quantity_estimate, 0, 100000), sanitizeString(req.body.mother_designation, 50), sanitizeString(req.body.father_designation, 50), sanitizeString(req.body.notes, 2000), sanitizeString(req.body.storage_location, 100)])).rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.put('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
-  const { designation } = req.params;
-  const { quantity_estimate, notes, storage_location, germination_rate, last_tested, mother_designation, father_designation } = req.body;
-  try {
-    const result = await pool.query(
-      `UPDATE seed_lots SET quantity_estimate=$1, notes=$2, storage_location=$3,
-       germination_rate=$4, last_tested=$5, mother_designation=$6, father_designation=$7
-       WHERE designation=$8 RETURNING *`,
-      [quantity_estimate, notes, storage_location, germination_rate, last_tested, mother_designation, father_designation, designation]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const designation = sanitizeString(req.params.designation, 50);
+  try { res.json((await pool.query('UPDATE seed_lots SET quantity_estimate=$1, notes=$2, storage_location=$3, germination_rate=$4, last_tested=$5, mother_designation=$6, father_designation=$7 WHERE designation=$8 RETURNING *', [validateInt(req.body.quantity_estimate, 0, 100000), sanitizeString(req.body.notes, 2000), sanitizeString(req.body.storage_location, 100), validateInt(req.body.germination_rate, 0, 100), sanitizeString(req.body.last_tested, 20) || null, sanitizeString(req.body.mother_designation, 50), sanitizeString(req.body.father_designation, 50), designation])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.delete('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
-  const { designation } = req.params;
-  try {
-    await pool.query('DELETE FROM seed_lots WHERE designation=$1', [designation]);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const designation = sanitizeString(req.params.designation, 50);
+  try { await pool.query('DELETE FROM seed_lots WHERE designation=$1', [designation]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== PLANTS ====================
 app.get('/api/plants', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT p.*, sl.variety_code, v.name as variety_name
-      FROM plants p
-      LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation
-      LEFT JOIN varieties v ON sl.variety_code = v.code
-      ORDER BY p.season_year DESC, p.designation
-    `);
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json((await pool.query('SELECT p.*, sl.variety_code, v.name as variety_name FROM plants p LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY p.season_year DESC, p.designation')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.post('/api/plants', authMiddleware, async (req, res) => {
-  const { seed_lot_designation, season_year, season_type, count, notes } = req.body;
+  const seed_lot_designation = sanitizeString(req.body.seed_lot_designation, 50);
+  const season_year = validateYear(req.body.season_year);
+  const count = validateInt(req.body.count, 1, 1000) || 1;
+  const validSeasons = ['summer', 'winter', 'spring', 'fall'];
+  const season_type = validSeasons.includes(req.body.season_type) ? req.body.season_type : 'summer';
+  if (!seed_lot_designation || !season_year) return res.status(400).json({ error: 'Seed lot and year required' });
   try {
-    const existing = await pool.query(
-      `SELECT COUNT(*) FROM plants WHERE seed_lot_designation=$1 AND season_year=$2`,
-      [seed_lot_designation, season_year]
-    );
+    const existing = await pool.query('SELECT COUNT(*) FROM plants WHERE seed_lot_designation=$1 AND season_year=$2', [seed_lot_designation, season_year]);
     const startNum = parseInt(existing.rows[0].count) + 1;
-    const plantCount = count || 1;
     const created = [];
-    for (let i = 0; i < plantCount; i++) {
-      const plantNum = String(startNum + i).padStart(2, '0');
-      const designation = `${seed_lot_designation}-P${plantNum}`;
-      const result = await pool.query(
-        `INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, notes)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [designation, seed_lot_designation, season_year, season_type || 'summer', notes]
-      );
-      created.push(result.rows[0]);
+    for (let i = 0; i < count; i++) {
+      const designation = seed_lot_designation + '-P' + String(startNum + i).padStart(2, '0');
+      created.push((await pool.query('INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, notes) VALUES ($1, $2, $3, $4, $5) RETURNING *', [designation, seed_lot_designation, season_year, season_type, sanitizeString(req.body.notes, 2000)])).rows[0]);
     }
     res.json(created);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.put('/api/plants/:designation', authMiddleware, async (req, res) => {
-  const { designation } = req.params;
-  const { selected_for_seed, notes, traits, season_type } = req.body;
-  try {
-    const result = await pool.query(
-      `UPDATE plants SET selected_for_seed=$1, notes=$2, traits=$3, season_type=$4 WHERE designation=$5 RETURNING *`,
-      [selected_for_seed, notes, JSON.stringify(traits || {}), season_type, designation]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const designation = sanitizeString(req.params.designation, 50);
+  const validSeasons = ['summer', 'winter', 'spring', 'fall'];
+  const season_type = validSeasons.includes(req.body.season_type) ? req.body.season_type : 'summer';
+  try { res.json((await pool.query('UPDATE plants SET selected_for_seed=$1, notes=$2, traits=$3, season_type=$4 WHERE designation=$5 RETURNING *', [req.body.selected_for_seed === true || req.body.selected_for_seed === 'true', sanitizeString(req.body.notes, 2000), JSON.stringify(req.body.traits || {}), season_type, designation])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.delete('/api/plants/:designation', authMiddleware, async (req, res) => {
-  const { designation } = req.params;
-  try {
-    await pool.query('DELETE FROM plants WHERE designation=$1', [designation]);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const designation = sanitizeString(req.params.designation, 50);
+  try { await pool.query('DELETE FROM plants WHERE designation=$1', [designation]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== BREEDING PROJECTS ====================
 app.get('/api/projects', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM breeding_projects ORDER BY started_year DESC');
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json((await pool.query('SELECT * FROM breeding_projects ORDER BY started_year DESC')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.post('/api/projects', authMiddleware, async (req, res) => {
-  const { name, description, target_traits, started_year } = req.body;
+  const name = sanitizeString(req.body.name, 100);
+  if (!name) return res.status(400).json({ error: 'Name required' });
+  const started_year = validateYear(req.body.started_year);
+  const target_traits = Array.isArray(req.body.target_traits) ? req.body.target_traits.map(t => sanitizeString(t, 100)).filter(Boolean) : [];
   try {
-    const abbrev = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 6);
-    const code = `WV-${abbrev}-${started_year}`;
-    const result = await pool.query(
-      `INSERT INTO breeding_projects (code, name, description, target_traits, started_year)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [code, name, description, JSON.stringify(target_traits || []), started_year]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const code = 'WV-' + name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 6) + '-' + started_year;
+    res.json((await pool.query('INSERT INTO breeding_projects (code, name, description, target_traits, started_year) VALUES ($1, $2, $3, $4, $5) RETURNING *', [code, name, sanitizeString(req.body.description, 2000), JSON.stringify(target_traits), started_year])).rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.put('/api/projects/:code', authMiddleware, async (req, res) => {
-  const { code } = req.params;
-  const { name, description, target_traits, status } = req.body;
-  try {
-    const result = await pool.query(
-      `UPDATE breeding_projects SET name=$1, description=$2, target_traits=$3, status=$4 WHERE code=$5 RETURNING *`,
-      [name, description, JSON.stringify(target_traits || []), status, code]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const code = sanitizeString(req.params.code, 20);
+  const name = sanitizeString(req.body.name, 100);
+  if (!name) return res.status(400).json({ error: 'Name required' });
+  const validStatuses = ['active', 'complete', 'paused'];
+  const status = validStatuses.includes(req.body.status) ? req.body.status : 'active';
+  const target_traits = Array.isArray(req.body.target_traits) ? req.body.target_traits.map(t => sanitizeString(t, 100)).filter(Boolean) : [];
+  try { res.json((await pool.query('UPDATE breeding_projects SET name=$1, description=$2, target_traits=$3, status=$4 WHERE code=$5 RETURNING *', [name, sanitizeString(req.body.description, 2000), JSON.stringify(target_traits), status, code])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.delete('/api/projects/:code', authMiddleware, async (req, res) => {
-  const { code } = req.params;
-  try {
-    await pool.query('DELETE FROM breeding_projects WHERE code=$1', [code]);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const code = sanitizeString(req.params.code, 20);
+  try { await pool.query('DELETE FROM breeding_projects WHERE code=$1', [code]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== HARVEST LOG ====================
 app.get('/api/harvest', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT h.*, p.seed_lot_designation, v.name as variety_name
-      FROM harvest_log h
-      LEFT JOIN plants p ON h.plant_designation = p.designation
-      LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation
-      LEFT JOIN varieties v ON sl.variety_code = v.code
-      ORDER BY h.harvest_date DESC
-    `);
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json((await pool.query('SELECT h.*, p.seed_lot_designation, v.name as variety_name FROM harvest_log h LEFT JOIN plants p ON h.plant_designation = p.designation LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY h.harvest_date DESC')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.post('/api/harvest', authMiddleware, async (req, res) => {
-  const { plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes } = req.body;
-  try {
-    const result = await pool.query(
-      `INSERT INTO harvest_log (plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const plant_designation = sanitizeString(req.body.plant_designation, 50);
+  if (!plant_designation) return res.status(400).json({ error: 'Plant required' });
+  try { res.json((await pool.query('INSERT INTO harvest_log (plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', [plant_designation, sanitizeString(req.body.harvest_date, 20), validateDecimal(req.body.fruit_length_inches), validateDecimal(req.body.fruit_diameter_inches), validateDecimal(req.body.fruit_weight_oz), sanitizeString(req.body.condition, 50), sanitizeString(req.body.processing_method, 50), validateInt(req.body.seed_count, 0, 10000), sanitizeString(req.body.notes, 2000)])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.put('/api/harvest/:id', authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  const { harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes } = req.body;
-  try {
-    const result = await pool.query(
-      `UPDATE harvest_log SET harvest_date=$1, fruit_length_inches=$2, fruit_diameter_inches=$3,
-       fruit_weight_oz=$4, condition=$5, processing_method=$6, seed_count=$7, notes=$8
-       WHERE id=$9 RETURNING *`,
-      [harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes, id]
-    );
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { res.json((await pool.query('UPDATE harvest_log SET harvest_date=$1, fruit_length_inches=$2, fruit_diameter_inches=$3, fruit_weight_oz=$4, condition=$5, processing_method=$6, seed_count=$7, notes=$8 WHERE id=$9 RETURNING *', [sanitizeString(req.body.harvest_date, 20), validateDecimal(req.body.fruit_length_inches), validateDecimal(req.body.fruit_diameter_inches), validateDecimal(req.body.fruit_weight_oz), sanitizeString(req.body.condition, 50), sanitizeString(req.body.processing_method, 50), validateInt(req.body.seed_count, 0, 10000), sanitizeString(req.body.notes, 2000), id])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
-
 app.delete('/api/harvest/:id', authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  try {
-    await pool.query('DELETE FROM harvest_log WHERE id=$1', [id]);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { await pool.query('DELETE FROM harvest_log WHERE id=$1', [id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== STATS ====================
+app.get('/api/germination', authMiddleware, async (req, res) => {
+  try { res.json((await pool.query('SELECT g.*, v.name as variety_name FROM germination_tests g LEFT JOIN seed_lots sl ON g.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY g.date_started DESC')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.post('/api/germination', authMiddleware, async (req, res) => {
+  const seed_lot_designation = sanitizeString(req.body.seed_lot_designation, 50);
+  const date_started = sanitizeString(req.body.date_started, 20);
+  const seeds_planted = validateInt(req.body.seeds_planted, 1, 10000);
+  if (!seed_lot_designation || !date_started || !seeds_planted) return res.status(400).json({ error: 'Seed lot, date and seeds planted required' });
+  try { res.json((await pool.query('INSERT INTO germination_tests (seed_lot_designation, date_started, seeds_planted, notes) VALUES ($1, $2, $3, $4) RETURNING *', [seed_lot_designation, date_started, seeds_planted, sanitizeString(req.body.notes, 2000)])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.put('/api/germination/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  const seeds_germinated = validateInt(req.body.seeds_germinated, 0, 10000);
+  const date_germinated = sanitizeString(req.body.date_germinated, 20);
+  const seeds_thinned = validateInt(req.body.seeds_thinned, 0, 10000);
+  const date_thinned = sanitizeString(req.body.date_thinned, 20);
+  const plants_remaining = validateInt(req.body.plants_remaining, 0, 10000);
+  const notes = sanitizeString(req.body.notes, 2000);
+  try {
+    const test = (await pool.query('SELECT * FROM germination_tests WHERE id=$1', [id])).rows[0];
+    let days_to_germination = null;
+    if (date_germinated && test.date_started) {
+      days_to_germination = Math.round((new Date(date_germinated) - new Date(test.date_started)) / (1000 * 60 * 60 * 24));
+    }
+    const germination_rate = seeds_germinated !== null && test.seeds_planted ? Math.round((seeds_germinated / test.seeds_planted) * 100) : null;
+    const result = (await pool.query('UPDATE germination_tests SET seeds_germinated=$1, date_germinated=$2, days_to_germination=$3, seeds_thinned=$4, date_thinned=$5, plants_remaining=$6, notes=$7 WHERE id=$8 RETURNING *', [seeds_germinated, date_germinated || null, days_to_germination, seeds_thinned, date_thinned || null, plants_remaining, notes, id])).rows[0];
+    if (germination_rate !== null) await pool.query('UPDATE seed_lots SET germination_rate=$1, last_tested=$2 WHERE designation=$3', [germination_rate, test.date_started, test.seed_lot_designation]);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.delete('/api/germination/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { await pool.query('DELETE FROM germination_tests WHERE id=$1', [id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 app.get('/api/stats', authMiddleware, async (req, res) => {
   try {
     const [varieties, seedLots, plants, projects] = await Promise.all([
@@ -491,40 +451,24 @@ app.get('/api/stats', authMiddleware, async (req, res) => {
       pool.query('SELECT COUNT(*) FROM plants WHERE season_year = EXTRACT(YEAR FROM NOW())'),
       pool.query("SELECT COUNT(*) FROM breeding_projects WHERE status = 'active'"),
     ]);
-    res.json({
-      varieties: parseInt(varieties.rows[0].count),
-      seedLots: parseInt(seedLots.rows[0].count),
-      activePlants: parseInt(plants.rows[0].count),
-      activeProjects: parseInt(projects.rows[0].count),
-    });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json({ varieties: parseInt(varieties.rows[0].count), seedLots: parseInt(seedLots.rows[0].count), activePlants: parseInt(plants.rows[0].count), activeProjects: parseInt(projects.rows[0].count) });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== VIABILITY ====================
 app.get('/api/viability', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT sl.*, v.name as variety_name, v.species_code
-      FROM seed_lots sl
-      LEFT JOIN varieties v ON sl.variety_code = v.code
-      ORDER BY sl.designation
-    `);
+    const result = await pool.query('SELECT sl.*, v.name as variety_name, v.species_code FROM seed_lots sl LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY sl.designation');
     const currentYear = new Date().getFullYear();
     const viabilityYears = { CUC: 5, TOM: 4, PEP: 3 };
-    const warnings = result.rows.map(lot => {
+    res.json(result.rows.map(lot => {
       const maxYears = viabilityYears[lot.species_code] || 3;
-      const age = currentYear - lot.year_saved;
-      const yearsLeft = maxYears - age;
-      let status = 'good';
-      if (yearsLeft <= 0) status = 'expired';
-      else if (yearsLeft <= 1) status = 'warning';
-      return { ...lot, age, yearsLeft, maxYears, status };
-    }).filter(l => l.status !== 'good');
-    res.json(warnings);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+      const yearsLeft = maxYears - (currentYear - lot.year_saved);
+      const status = yearsLeft <= 0 ? 'expired' : yearsLeft <= 1 ? 'warning' : 'good';
+      return { ...lot, yearsLeft, maxYears, status };
+    }).filter(l => l.status !== 'good'));
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// ==================== BACKUP ====================
 app.get('/api/backup/export', authMiddleware, async (req, res) => {
   try {
     const [species, varieties, seedLots, plants, projects, harvest] = await Promise.all([
@@ -535,69 +479,39 @@ app.get('/api/backup/export', authMiddleware, async (req, res) => {
       pool.query('SELECT * FROM breeding_projects ORDER BY code'),
       pool.query('SELECT * FROM harvest_log ORDER BY harvest_date'),
     ]);
-    const backup = {
-      app: 'SeedVault',
-      version: '1.0.0',
-      exported_at: new Date().toISOString(),
-      data: {
-        species: species.rows,
-        varieties: varieties.rows,
-        seed_lots: seedLots.rows,
-        plants: plants.rows,
-        breeding_projects: projects.rows,
-        harvest_log: harvest.rows,
-      }
-    };
-    const filename = `seedvault-backup-${new Date().toISOString().split('T')[0]}.json`;
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const filename = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.json';
+    res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
     res.setHeader('Content-Type', 'application/json');
-    res.json(backup);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json({ app: 'SeedVault', version: '1.0.0', exported_at: new Date().toISOString(), data: { species: species.rows, varieties: varieties.rows, seed_lots: seedLots.rows, plants: plants.rows, breeding_projects: projects.rows, harvest_log: harvest.rows } });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 app.get('/api/backup/export-csv', authMiddleware, async (req, res) => {
   try {
     const [varieties, seedLots, plants, harvest] = await Promise.all([
-      pool.query(`SELECT v.*, s.name as species_name FROM varieties v LEFT JOIN species s ON v.species_code = s.code ORDER BY v.code`),
-      pool.query(`SELECT sl.*, v.name as variety_name FROM seed_lots sl LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY sl.designation`),
-      pool.query(`SELECT p.*, v.name as variety_name FROM plants p LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY p.designation`),
-      pool.query(`SELECT h.*, v.name as variety_name FROM harvest_log h LEFT JOIN plants p ON h.plant_designation = p.designation LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY h.harvest_date`),
+      pool.query('SELECT v.*, s.name as species_name FROM varieties v LEFT JOIN species s ON v.species_code = s.code ORDER BY v.code'),
+      pool.query('SELECT sl.*, v.name as variety_name FROM seed_lots sl LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY sl.designation'),
+      pool.query('SELECT p.*, v.name as variety_name FROM plants p LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY p.designation'),
+      pool.query('SELECT h.*, v.name as variety_name FROM harvest_log h LEFT JOIN plants p ON h.plant_designation = p.designation LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY h.harvest_date'),
     ]);
-    const toCSV = (rows, cols) => {
-      if (!rows.length) return cols.join(',') + '\n';
-      const lines = rows.map(r => cols.map(c => {
-        const val = r[c] === null || r[c] === undefined ? '' : String(r[c]);
-        return '"' + val.replace(/"/g, '""') + '"';
-      }).join(','));
-      return [cols.join(','), ...lines].join('\n');
-    };
-    const sections = [
+    const toCSV = (rows, cols) => [cols.join(','), ...rows.map(r => cols.map(c => '"' + (r[c] === null || r[c] === undefined ? '' : String(r[c])).replace(/"/g, '""') + '"').join(','))].join('\n');
+    const filename = 'seedvault-export-' + new Date().toISOString().split('T')[0] + '.csv';
+    res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
+    res.setHeader('Content-Type', 'text/csv');
+    res.send([
       '=== VARIETIES ===\n' + toCSV(varieties.rows, ['code','name','species_name','type','source','year_acquired','description']),
       '=== SEED LOTS ===\n' + toCSV(seedLots.rows, ['designation','variety_name','generation','year_saved','quantity_estimate','storage_location','germination_rate','last_tested','notes']),
       '=== PLANTS ===\n' + toCSV(plants.rows, ['designation','variety_name','seed_lot_designation','season_year','season_type','selected_for_seed','notes']),
       '=== HARVEST LOG ===\n' + toCSV(harvest.rows, ['plant_designation','variety_name','harvest_date','fruit_length_inches','fruit_diameter_inches','fruit_weight_oz','seed_count','condition','processing_method','notes']),
-    ];
-    const filename = `seedvault-export-${new Date().toISOString().split('T')[0]}.csv`;
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'text/csv');
-    res.send(sections.join('\n\n'));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    ].join('\n\n'));
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 app.post('/api/backup/preview', authMiddleware, async (req, res) => {
   try {
     const { data } = req.body;
-    res.json({
-      species: data.species?.length || 0,
-      varieties: data.varieties?.length || 0,
-      seed_lots: data.seed_lots?.length || 0,
-      plants: data.plants?.length || 0,
-      breeding_projects: data.breeding_projects?.length || 0,
-      harvest_log: data.harvest_log?.length || 0,
-      exported_at: req.body.exported_at,
-      version: req.body.version,
-    });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json({ species: data.species?.length || 0, varieties: data.varieties?.length || 0, seed_lots: data.seed_lots?.length || 0, plants: data.plants?.length || 0, breeding_projects: data.breeding_projects?.length || 0, harvest_log: data.harvest_log?.length || 0, exported_at: req.body.exported_at, version: req.body.version });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 app.post('/api/backup/import', authMiddleware, async (req, res) => {
@@ -607,45 +521,20 @@ app.post('/api/backup/import', authMiddleware, async (req, res) => {
     let imported = { species: 0, varieties: 0, seed_lots: 0, plants: 0, breeding_projects: 0, harvest_log: 0 };
     let skipped = { species: 0, varieties: 0, seed_lots: 0, plants: 0, breeding_projects: 0, harvest_log: 0 };
     await client.query('BEGIN');
-    for (const s of (data.species || [])) {
-      const r = await client.query('INSERT INTO species (code, name) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING RETURNING *', [s.code, s.name]);
-      r.rowCount > 0 ? imported.species++ : skipped.species++;
-    }
-    for (const v of (data.varieties || [])) {
-      const r = await client.query(`INSERT INTO varieties (code, name, species_code, type, description, source, year_acquired) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (code) DO NOTHING RETURNING *`, [v.code, v.name, v.species_code, v.type, v.description, v.source, v.year_acquired]);
-      r.rowCount > 0 ? imported.varieties++ : skipped.varieties++;
-    }
-    for (const sl of (data.seed_lots || [])) {
-      const r = await client.query(`INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location, germination_rate, last_tested) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (designation) DO NOTHING RETURNING *`, [sl.designation, sl.variety_code, sl.generation, sl.year_saved, sl.quantity_estimate, sl.mother_designation, sl.father_designation, sl.notes, sl.storage_location, sl.germination_rate, sl.last_tested]);
-      r.rowCount > 0 ? imported.seed_lots++ : skipped.seed_lots++;
-    }
-    for (const p of (data.plants || [])) {
-      const r = await client.query(`INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, selected_for_seed, notes, traits) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (designation) DO NOTHING RETURNING *`, [p.designation, p.seed_lot_designation, p.season_year, p.season_type, p.selected_for_seed, p.notes, p.traits]);
-      r.rowCount > 0 ? imported.plants++ : skipped.plants++;
-    }
-    for (const bp of (data.breeding_projects || [])) {
-      const r = await client.query(`INSERT INTO breeding_projects (code, name, description, target_traits, status, started_year) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO NOTHING RETURNING *`, [bp.code, bp.name, bp.description, bp.target_traits, bp.status, bp.started_year]);
-      r.rowCount > 0 ? imported.breeding_projects++ : skipped.breeding_projects++;
-    }
-    for (const h of (data.harvest_log || [])) {
-      const r = await client.query(`INSERT INTO harvest_log (plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`, [h.plant_designation, h.harvest_date, h.fruit_length_inches, h.fruit_diameter_inches, h.fruit_weight_oz, h.condition, h.processing_method, h.seed_count, h.notes]);
-      r.rowCount > 0 ? imported.harvest_log++ : skipped.harvest_log++;
-    }
+    for (const s of (data.species || [])) { const r = await client.query('INSERT INTO species (code, name) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING RETURNING *', [s.code, s.name]); r.rowCount > 0 ? imported.species++ : skipped.species++; }
+    for (const v of (data.varieties || [])) { const r = await client.query('INSERT INTO varieties (code, name, species_code, type, description, source, year_acquired) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (code) DO NOTHING RETURNING *', [v.code, v.name, v.species_code, v.type, v.description, v.source, v.year_acquired]); r.rowCount > 0 ? imported.varieties++ : skipped.varieties++; }
+    for (const sl of (data.seed_lots || [])) { const r = await client.query('INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location, germination_rate, last_tested) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (designation) DO NOTHING RETURNING *', [sl.designation, sl.variety_code, sl.generation, sl.year_saved, sl.quantity_estimate, sl.mother_designation, sl.father_designation, sl.notes, sl.storage_location, sl.germination_rate, sl.last_tested]); r.rowCount > 0 ? imported.seed_lots++ : skipped.seed_lots++; }
+    for (const p of (data.plants || [])) { const r = await client.query('INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, selected_for_seed, notes, traits) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (designation) DO NOTHING RETURNING *', [p.designation, p.seed_lot_designation, p.season_year, p.season_type, p.selected_for_seed, p.notes, p.traits]); r.rowCount > 0 ? imported.plants++ : skipped.plants++; }
+    for (const bp of (data.breeding_projects || [])) { const r = await client.query('INSERT INTO breeding_projects (code, name, description, target_traits, status, started_year) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO NOTHING RETURNING *', [bp.code, bp.name, bp.description, bp.target_traits, bp.status, bp.started_year]); r.rowCount > 0 ? imported.breeding_projects++ : skipped.breeding_projects++; }
+    for (const h of (data.harvest_log || [])) { const r = await client.query('INSERT INTO harvest_log (plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', [h.plant_designation, h.harvest_date, h.fruit_length_inches, h.fruit_diameter_inches, h.fruit_weight_oz, h.condition, h.processing_method, h.seed_count, h.notes]); r.rowCount > 0 ? imported.harvest_log++ : skipped.harvest_log++; }
     await client.query('COMMIT');
     res.json({ success: true, imported, skipped });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
-  } finally { client.release(); }
+  } catch (err) { await client.query('ROLLBACK'); res.status(500).json({ error: 'Server error' }); }
+  finally { client.release(); }
 });
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 
 initDB().then(() => {
-  app.listen(PORT, () => console.log(`SeedVault running on port ${PORT}`));
-}).catch(err => {
-  console.error('Failed to initialize database:', err);
-  process.exit(1);
-});
+  app.listen(PORT, () => console.log('SeedVault running on port ' + PORT));
+}).catch(err => { console.error('Failed to initialize database:', err); process.exit(1); });
