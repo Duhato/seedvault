@@ -2,8 +2,6 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
-    env_file:
-      - /mnt/ssd-apps/seedvault/app/.env
     environment:
       POSTGRES_DB: seedvault
       POSTGRES_USER: seedvault

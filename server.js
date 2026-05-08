@@ -20,19 +20,15 @@ const pool = new Pool({
 });
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
+  windowMs: 15 * 60 * 1000, max: 10,
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  standardHeaders: true, legacyHeaders: false,
 });
 
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 200,
+  windowMs: 60 * 1000, max: 200,
   message: { error: 'Too many requests. Please slow down.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  standardHeaders: true, legacyHeaders: false,
 });
 
 app.use(cors());
@@ -45,24 +41,20 @@ function sanitizeString(str, maxLen = 255) {
   if (str === null || str === undefined) return null;
   return String(str).trim().slice(0, maxLen);
 }
-
 function validateCode(code, maxLen = 20) {
   if (!code) return null;
   return String(code).trim().toUpperCase().replace(/[^A-Z0-9-_]/g, '').slice(0, maxLen);
 }
-
 function validateYear(year) {
   const y = parseInt(year);
   if (isNaN(y) || y < 1900 || y > 2100) return null;
   return y;
 }
-
 function validateInt(val, min = 0, max = 999999) {
   const n = parseInt(val);
   if (isNaN(n) || n < min || n > max) return null;
   return n;
 }
-
 function validateDecimal(val, min = 0, max = 9999) {
   const n = parseFloat(val);
   if (isNaN(n) || n < min || n > max) return null;
@@ -77,6 +69,7 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(20) DEFAULT 'standard',
         created_at TIMESTAMP DEFAULT NOW(),
         last_login TIMESTAMP
       );
@@ -163,6 +156,7 @@ async function initDB() {
       INSERT INTO species (code, name) VALUES
         ('CUC', 'Cucumber'),('TOM', 'Tomato'),('PEP', 'Pepper')
       ON CONFLICT (code) DO NOTHING;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'standard';
     `);
     console.log('Database initialized successfully');
   } finally { client.release(); }
@@ -172,10 +166,14 @@ function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch (err) { res.status(401).json({ error: 'Invalid or expired token' }); }
+}
+
+function adminMiddleware(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
 }
 
 app.get('/api/auth/status', async (req, res) => {
@@ -195,9 +193,9 @@ app.post('/api/auth/setup', async (req, res) => {
     if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     const hash = await bcrypt.hash(password, 12);
-    await pool.query('INSERT INTO users (username, password_hash) VALUES ($1, $2)', [username, hash]);
-    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: SESSION_DAYS + 'd' });
-    res.json({ success: true, token, username });
+    await pool.query('INSERT INTO users (username, password_hash, role) VALUES ($1, $2, $3)', [username, hash, 'admin']);
+    const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, { expiresIn: SESSION_DAYS + 'd' });
+    res.json({ success: true, token, username, role: 'admin' });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -212,8 +210,8 @@ app.post('/api/auth/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid username or password' });
     await pool.query('UPDATE users SET last_login=NOW() WHERE id=$1', [user.id]);
-    const token = jwt.sign({ username: user.username }, JWT_SECRET, { expiresIn: SESSION_DAYS + 'd' });
-    res.json({ success: true, token, username: user.username });
+    const token = jwt.sign({ username: user.username, role: user.role }, JWT_SECRET, { expiresIn: SESSION_DAYS + 'd' });
+    res.json({ success: true, token, username: user.username, role: user.role });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -226,6 +224,49 @@ app.post('/api/auth/change-password', authMiddleware, async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
     const hash = await bcrypt.hash(newPassword, 12);
     await pool.query('UPDATE users SET password_hash=$1 WHERE username=$2', [hash, req.user.username]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, username, role, created_at, last_login FROM users ORDER BY created_at');
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const username = sanitizeString(req.body.username, 50);
+    const { password } = req.body;
+    const role = req.body.role === 'admin' ? 'admin' : 'standard';
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const hash = await bcrypt.hash(password, 12);
+    const result = await pool.query('INSERT INTO users (username, password_hash, role) VALUES ($1, $2, $3) RETURNING id, username, role, created_at', [username, hash, role]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(400).json({ error: 'Username already exists' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/users/:username', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const username = sanitizeString(req.params.username, 50);
+    if (username === req.user.username) return res.status(400).json({ error: 'Cannot delete your own account' });
+    await pool.query('DELETE FROM users WHERE username=$1', [username]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.put('/api/users/:username/role', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const username = sanitizeString(req.params.username, 50);
+    if (username === req.user.username) return res.status(400).json({ error: 'Cannot change your own role' });
+    const role = req.body.role === 'admin' ? 'admin' : 'standard';
+    await pool.query('UPDATE users SET role=$1 WHERE username=$2', [role, username]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
@@ -423,7 +464,6 @@ app.put('/api/germination/:id', authMiddleware, async (req, res) => {
   const seeds_thinned = validateInt(req.body.seeds_thinned, 0, 10000);
   const date_thinned = sanitizeString(req.body.date_thinned, 20);
   const plants_remaining = validateInt(req.body.plants_remaining, 0, 10000);
-  const notes = sanitizeString(req.body.notes, 2000);
   try {
     const test = (await pool.query('SELECT * FROM germination_tests WHERE id=$1', [id])).rows[0];
     let days_to_germination = null;
@@ -431,7 +471,7 @@ app.put('/api/germination/:id', authMiddleware, async (req, res) => {
       days_to_germination = Math.round((new Date(date_germinated) - new Date(test.date_started)) / (1000 * 60 * 60 * 24));
     }
     const germination_rate = seeds_germinated !== null && test.seeds_planted ? Math.round((seeds_germinated / test.seeds_planted) * 100) : null;
-    const result = (await pool.query('UPDATE germination_tests SET seeds_germinated=$1, date_germinated=$2, days_to_germination=$3, seeds_thinned=$4, date_thinned=$5, plants_remaining=$6, notes=$7 WHERE id=$8 RETURNING *', [seeds_germinated, date_germinated || null, days_to_germination, seeds_thinned, date_thinned || null, plants_remaining, notes, id])).rows[0];
+    const result = (await pool.query('UPDATE germination_tests SET seeds_germinated=$1, date_germinated=$2, days_to_germination=$3, seeds_thinned=$4, date_thinned=$5, plants_remaining=$6, notes=$7 WHERE id=$8 RETURNING *', [seeds_germinated, date_germinated || null, days_to_germination, seeds_thinned, date_thinned || null, plants_remaining, sanitizeString(req.body.notes, 2000), id])).rows[0];
     if (germination_rate !== null) await pool.query('UPDATE seed_lots SET germination_rate=$1, last_tested=$2 WHERE designation=$3', [germination_rate, test.date_started, test.seed_lot_designation]);
     res.json(result);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
