@@ -25,6 +25,35 @@ body {
   min-height: 100vh;
 }
 
+/* AUTH */
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--green-dark) 0%, var(--green-mid) 100%);
+  padding: 20px;
+}
+
+.auth-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.auth-brand {
+  text-align: center;
+  margin-bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* NAV */
 #navbar {
   background: var(--green-dark);
   padding: 0 20px;
@@ -80,11 +109,23 @@ body {
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   transition: all 0.2s;
-  margin-left: auto;
 }
 
 .nav-gear:hover { color: var(--white); background: rgba(255,255,255,0.1); }
 .nav-gear.active { color: var(--white); background: var(--green-mid); }
+
+.nav-logout {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.nav-logout:hover { color: var(--white); background: rgba(255,255,255,0.1); }
 
 .hamburger {
   display: none;
@@ -251,11 +292,6 @@ tr:hover td { background: var(--green-bg); }
   white-space: nowrap;
 }
 
-.designation-brown {
-  background: var(--brown);
-  color: var(--brown-pale);
-}
-
 .tag {
   display: inline-block;
   padding: 2px 8px;
@@ -269,7 +305,7 @@ tr:hover td { background: var(--green-bg); }
 .tag-hybrid { background: #fff3cd; color: #856404; }
 .tag-active { background: #d1fae5; color: #065f46; }
 .tag-complete { background: #e5e7eb; color: #374151; }
-.tag-selected { background: #fef3c7; color: #92400e; }
+.tag-paused { background: #fef3c7; color: #92400e; }
 
 .form-group { margin-bottom: 16px; }
 
@@ -357,7 +393,6 @@ tr:hover td { background: var(--green-bg); }
 }
 
 #modal-close:hover { background: var(--green-bg); }
-
 .modal-body { padding: 24px; }
 
 .empty-state {
@@ -393,9 +428,7 @@ tr:hover td { background: var(--green-bg); }
   font-weight: 700;
 }
 
-.settings-section {
-  margin-bottom: 24px;
-}
+.hidden { display: none !important; }
 
 .settings-section-title {
   font-size: 1.1rem;
@@ -437,4 +470,5 @@ tr:hover td { background: var(--green-bg); }
   .page-title { font-size: 1.3rem; }
   th, td { padding: 8px 10px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .auth-card { padding: 24px; }
 }

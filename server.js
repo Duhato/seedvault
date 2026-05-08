@@ -2,9 +2,13 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const cors = require('cors');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'seedvault-secret-change-me';
+const SESSION_DAYS = 30;
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -16,18 +20,26 @@ const pool = new Pool({
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
 
 async function initDB() {
   const client = await pool.connect();
   try {
     await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_login TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS species (
         id SERIAL PRIMARY KEY,
         code VARCHAR(10) UNIQUE NOT NULL,
         name VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
       CREATE TABLE IF NOT EXISTS varieties (
         id SERIAL PRIMARY KEY,
         code VARCHAR(20) UNIQUE NOT NULL,
@@ -39,6 +51,7 @@ async function initDB() {
         year_acquired INTEGER,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
       CREATE TABLE IF NOT EXISTS seed_lots (
         id SERIAL PRIMARY KEY,
         designation VARCHAR(50) UNIQUE NOT NULL,
@@ -54,6 +67,7 @@ async function initDB() {
         last_tested DATE,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
       CREATE TABLE IF NOT EXISTS plants (
         id SERIAL PRIMARY KEY,
         designation VARCHAR(50) UNIQUE NOT NULL,
@@ -65,6 +79,7 @@ async function initDB() {
         traits JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT NOW()
       );
+
       CREATE TABLE IF NOT EXISTS breeding_projects (
         id SERIAL PRIMARY KEY,
         code VARCHAR(20) UNIQUE NOT NULL,
@@ -75,6 +90,7 @@ async function initDB() {
         started_year INTEGER,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
       CREATE TABLE IF NOT EXISTS harvest_log (
         id SERIAL PRIMARY KEY,
         plant_designation VARCHAR(50) REFERENCES plants(designation),
@@ -88,6 +104,7 @@ async function initDB() {
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
       INSERT INTO species (code, name) VALUES
         ('CUC', 'Cucumber'),
         ('TOM', 'Tomato'),
@@ -100,15 +117,96 @@ async function initDB() {
   }
 }
 
-// SPECIES
-app.get('/api/species', async (req, res) => {
+// ==================== AUTH MIDDLEWARE ====================
+function authMiddleware(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+// ==================== AUTH ROUTES ====================
+app.get('/api/auth/status', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT COUNT(*) FROM users');
+    res.json({ hasUsers: parseInt(result.rows[0].count) > 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/setup', async (req, res) => {
+  try {
+    const count = await pool.query('SELECT COUNT(*) FROM users');
+    if (parseInt(count.rows[0].count) > 0) {
+      return res.status(400).json({ error: 'Setup already complete' });
+    }
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const hash = await bcrypt.hash(password, 12);
+    await pool.query('INSERT INTO users (username, password_hash) VALUES ($1, $2)', [username, hash]);
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: SESSION_DAYS + 'd' });
+    res.json({ success: true, token, username });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    const result = await pool.query('SELECT * FROM users WHERE username=$1', [username]);
+    if (!result.rows.length) return res.status(401).json({ error: 'Invalid username or password' });
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid username or password' });
+    await pool.query('UPDATE users SET last_login=NOW() WHERE id=$1', [user.id]);
+    const token = jwt.sign({ username: user.username }, JWT_SECRET, { expiresIn: SESSION_DAYS + 'd' });
+    res.json({ success: true, token, username: user.username });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/change-password', authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const result = await pool.query('SELECT * FROM users WHERE username=$1', [req.user.username]);
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    const hash = await bcrypt.hash(newPassword, 12);
+    await pool.query('UPDATE users SET password_hash=$1 WHERE username=$2', [hash, req.user.username]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== PROTECTED STATIC FILES ====================
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ==================== SPECIES ====================
+app.get('/api/species', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM species ORDER BY name');
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/species', async (req, res) => {
+app.post('/api/species', authMiddleware, async (req, res) => {
   const { code, name } = req.body;
   try {
     const result = await pool.query(
@@ -119,19 +217,16 @@ app.post('/api/species', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/species/:code', async (req, res) => {
+app.put('/api/species/:code', authMiddleware, async (req, res) => {
   const { code } = req.params;
   const { name } = req.body;
   try {
-    const result = await pool.query(
-      'UPDATE species SET name=$1 WHERE code=$2 RETURNING *',
-      [name, code]
-    );
+    const result = await pool.query('UPDATE species SET name=$1 WHERE code=$2 RETURNING *', [name, code]);
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/species/:code', async (req, res) => {
+app.delete('/api/species/:code', authMiddleware, async (req, res) => {
   const { code } = req.params;
   try {
     const check = await pool.query('SELECT COUNT(*) FROM varieties WHERE species_code=$1', [code]);
@@ -143,8 +238,8 @@ app.delete('/api/species/:code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// VARIETIES
-app.get('/api/varieties', async (req, res) => {
+// ==================== VARIETIES ====================
+app.get('/api/varieties', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT v.*, s.name as species_name 
@@ -156,7 +251,7 @@ app.get('/api/varieties', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/varieties', async (req, res) => {
+app.post('/api/varieties', authMiddleware, async (req, res) => {
   const { name, species_code, type, description, source, year_acquired } = req.body;
   try {
     const abbrev = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 4);
@@ -170,20 +265,19 @@ app.post('/api/varieties', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/varieties/:code', async (req, res) => {
+app.put('/api/varieties/:code', authMiddleware, async (req, res) => {
   const { code } = req.params;
   const { name, type, description, source, year_acquired } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE varieties SET name=$1, type=$2, description=$3, source=$4, year_acquired=$5
-       WHERE code=$6 RETURNING *`,
+      `UPDATE varieties SET name=$1, type=$2, description=$3, source=$4, year_acquired=$5 WHERE code=$6 RETURNING *`,
       [name, type, description, source, year_acquired, code]
     );
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/varieties/:code', async (req, res) => {
+app.delete('/api/varieties/:code', authMiddleware, async (req, res) => {
   const { code } = req.params;
   try {
     await pool.query('DELETE FROM varieties WHERE code=$1', [code]);
@@ -191,8 +285,8 @@ app.delete('/api/varieties/:code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// SEED LOTS
-app.get('/api/seed-lots', async (req, res) => {
+// ==================== SEED LOTS ====================
+app.get('/api/seed-lots', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT sl.*, v.name as variety_name, v.species_code
@@ -204,7 +298,7 @@ app.get('/api/seed-lots', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/seed-lots', async (req, res) => {
+app.post('/api/seed-lots', authMiddleware, async (req, res) => {
   const { variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location } = req.body;
   try {
     const designation = `${variety_code}-G${generation}-${year_saved}`;
@@ -217,7 +311,7 @@ app.post('/api/seed-lots', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/seed-lots/:designation', async (req, res) => {
+app.put('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
   const { designation } = req.params;
   const { quantity_estimate, notes, storage_location, germination_rate, last_tested, mother_designation, father_designation } = req.body;
   try {
@@ -231,7 +325,7 @@ app.put('/api/seed-lots/:designation', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/seed-lots/:designation', async (req, res) => {
+app.delete('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
   const { designation } = req.params;
   try {
     await pool.query('DELETE FROM seed_lots WHERE designation=$1', [designation]);
@@ -239,8 +333,8 @@ app.delete('/api/seed-lots/:designation', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PLANTS
-app.get('/api/plants', async (req, res) => {
+// ==================== PLANTS ====================
+app.get('/api/plants', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT p.*, sl.variety_code, v.name as variety_name
@@ -253,7 +347,7 @@ app.get('/api/plants', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/plants', async (req, res) => {
+app.post('/api/plants', authMiddleware, async (req, res) => {
   const { seed_lot_designation, season_year, season_type, count, notes } = req.body;
   try {
     const existing = await pool.query(
@@ -277,20 +371,19 @@ app.post('/api/plants', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/plants/:designation', async (req, res) => {
+app.put('/api/plants/:designation', authMiddleware, async (req, res) => {
   const { designation } = req.params;
   const { selected_for_seed, notes, traits, season_type } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE plants SET selected_for_seed=$1, notes=$2, traits=$3, season_type=$4
-       WHERE designation=$5 RETURNING *`,
+      `UPDATE plants SET selected_for_seed=$1, notes=$2, traits=$3, season_type=$4 WHERE designation=$5 RETURNING *`,
       [selected_for_seed, notes, JSON.stringify(traits || {}), season_type, designation]
     );
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/plants/:designation', async (req, res) => {
+app.delete('/api/plants/:designation', authMiddleware, async (req, res) => {
   const { designation } = req.params;
   try {
     await pool.query('DELETE FROM plants WHERE designation=$1', [designation]);
@@ -298,15 +391,15 @@ app.delete('/api/plants/:designation', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// BREEDING PROJECTS
-app.get('/api/projects', async (req, res) => {
+// ==================== BREEDING PROJECTS ====================
+app.get('/api/projects', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM breeding_projects ORDER BY started_year DESC');
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/projects', async (req, res) => {
+app.post('/api/projects', authMiddleware, async (req, res) => {
   const { name, description, target_traits, started_year } = req.body;
   try {
     const abbrev = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 6);
@@ -320,20 +413,19 @@ app.post('/api/projects', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/projects/:code', async (req, res) => {
+app.put('/api/projects/:code', authMiddleware, async (req, res) => {
   const { code } = req.params;
   const { name, description, target_traits, status } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE breeding_projects SET name=$1, description=$2, target_traits=$3, status=$4
-       WHERE code=$5 RETURNING *`,
+      `UPDATE breeding_projects SET name=$1, description=$2, target_traits=$3, status=$4 WHERE code=$5 RETURNING *`,
       [name, description, JSON.stringify(target_traits || []), status, code]
     );
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/projects/:code', async (req, res) => {
+app.delete('/api/projects/:code', authMiddleware, async (req, res) => {
   const { code } = req.params;
   try {
     await pool.query('DELETE FROM breeding_projects WHERE code=$1', [code]);
@@ -341,8 +433,8 @@ app.delete('/api/projects/:code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// HARVEST LOG
-app.get('/api/harvest', async (req, res) => {
+// ==================== HARVEST LOG ====================
+app.get('/api/harvest', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT h.*, p.seed_lot_designation, v.name as variety_name
@@ -356,7 +448,7 @@ app.get('/api/harvest', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/harvest', async (req, res) => {
+app.post('/api/harvest', authMiddleware, async (req, res) => {
   const { plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes } = req.body;
   try {
     const result = await pool.query(
@@ -368,7 +460,7 @@ app.post('/api/harvest', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/harvest/:id', async (req, res) => {
+app.put('/api/harvest/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes } = req.body;
   try {
@@ -382,7 +474,7 @@ app.put('/api/harvest/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/harvest/:id', async (req, res) => {
+app.delete('/api/harvest/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query('DELETE FROM harvest_log WHERE id=$1', [id]);
@@ -390,8 +482,8 @@ app.delete('/api/harvest/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// STATS
-app.get('/api/stats', async (req, res) => {
+// ==================== STATS ====================
+app.get('/api/stats', authMiddleware, async (req, res) => {
   try {
     const [varieties, seedLots, plants, projects] = await Promise.all([
       pool.query('SELECT COUNT(*) FROM varieties'),
@@ -408,8 +500,8 @@ app.get('/api/stats', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// VIABILITY
-app.get('/api/viability', async (req, res) => {
+// ==================== VIABILITY ====================
+app.get('/api/viability', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT sl.*, v.name as variety_name, v.species_code
@@ -432,8 +524,8 @@ app.get('/api/viability', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// BACKUP EXPORT
-app.get('/api/backup/export', async (req, res) => {
+// ==================== BACKUP ====================
+app.get('/api/backup/export', authMiddleware, async (req, res) => {
   try {
     const [species, varieties, seedLots, plants, projects, harvest] = await Promise.all([
       pool.query('SELECT * FROM species ORDER BY code'),
@@ -463,8 +555,7 @@ app.get('/api/backup/export', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// CSV EXPORT
-app.get('/api/backup/export-csv', async (req, res) => {
+app.get('/api/backup/export-csv', authMiddleware, async (req, res) => {
   try {
     const [varieties, seedLots, plants, harvest] = await Promise.all([
       pool.query(`SELECT v.*, s.name as species_name FROM varieties v LEFT JOIN species s ON v.species_code = s.code ORDER BY v.code`),
@@ -474,12 +565,11 @@ app.get('/api/backup/export-csv', async (req, res) => {
     ]);
     const toCSV = (rows, cols) => {
       if (!rows.length) return cols.join(',') + '\n';
-      const header = cols.join(',');
       const lines = rows.map(r => cols.map(c => {
         const val = r[c] === null || r[c] === undefined ? '' : String(r[c]);
         return '"' + val.replace(/"/g, '""') + '"';
       }).join(','));
-      return [header, ...lines].join('\n');
+      return [cols.join(','), ...lines].join('\n');
     };
     const sections = [
       '=== VARIETIES ===\n' + toCSV(varieties.rows, ['code','name','species_name','type','source','year_acquired','description']),
@@ -494,8 +584,7 @@ app.get('/api/backup/export-csv', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// BACKUP IMPORT
-app.post('/api/backup/preview', async (req, res) => {
+app.post('/api/backup/preview', authMiddleware, async (req, res) => {
   try {
     const { data } = req.body;
     res.json({
@@ -511,7 +600,7 @@ app.post('/api/backup/preview', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/backup/import', async (req, res) => {
+app.post('/api/backup/import', authMiddleware, async (req, res) => {
   const client = await pool.connect();
   try {
     const { data } = req.body;

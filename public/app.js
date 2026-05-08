@@ -1,3 +1,143 @@
+// ==================== AUTH ====================
+const TOKEN_KEY = 'seedvault_token';
+const USERNAME_KEY = 'seedvault_username';
+
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+function setToken(token, username) {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USERNAME_KEY, username);
+}
+function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USERNAME_KEY);
+}
+
+async function checkAuth() {
+  try {
+    const status = await fetch('/api/auth/status').then(r => r.json());
+    if (!status.hasUsers) {
+      showSetup();
+      return false;
+    }
+    const token = getToken();
+    if (!token) {
+      showLogin();
+      return false;
+    }
+    const test = await api('/api/stats');
+    if (test.error === 'Unauthorized' || test.error === 'Invalid or expired token') {
+      clearToken();
+      showLogin();
+      return false;
+    }
+    showApp();
+    return true;
+  } catch (err) {
+    showLogin();
+    return false;
+  }
+}
+
+function showLogin() {
+  document.getElementById('auth-screen').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-form').classList.remove('hidden');
+  document.getElementById('setup-form').classList.add('hidden');
+}
+
+function showSetup() {
+  document.getElementById('auth-screen').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-form').classList.add('hidden');
+  document.getElementById('setup-form').classList.remove('hidden');
+}
+
+function showApp() {
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  const username = localStorage.getItem(USERNAME_KEY);
+  if (username) document.getElementById('nav-username').textContent = username;
+}
+
+async function submitLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.classList.add('hidden');
+  if (!username || !password) {
+    errEl.textContent = 'Please enter username and password';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    const result = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    }).then(r => r.json());
+    if (result.error) {
+      errEl.textContent = result.error;
+      errEl.classList.remove('hidden');
+      return;
+    }
+    setToken(result.token, result.username);
+    showApp();
+    await loadAll();
+    render();
+  } catch (err) {
+    errEl.textContent = 'Login failed. Please try again.';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function submitSetup() {
+  const username = document.getElementById('setup-username').value.trim();
+  const password = document.getElementById('setup-password').value;
+  const confirm = document.getElementById('setup-confirm').value;
+  const errEl = document.getElementById('setup-error');
+  errEl.classList.add('hidden');
+  if (!username || !password) {
+    errEl.textContent = 'Please fill in all fields';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (password.length < 8) {
+    errEl.textContent = 'Password must be at least 8 characters';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (password !== confirm) {
+    errEl.textContent = 'Passwords do not match';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    const result = await fetch('/api/auth/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    }).then(r => r.json());
+    if (result.error) {
+      errEl.textContent = result.error;
+      errEl.classList.remove('hidden');
+      return;
+    }
+    setToken(result.token, result.username);
+    showApp();
+    await loadAll();
+    render();
+  } catch (err) {
+    errEl.textContent = 'Setup failed. Please try again.';
+    errEl.classList.remove('hidden');
+  }
+}
+
+function logout() {
+  clearToken();
+  showLogin();
+}
+
+// ==================== STATE ====================
 const state = {
   page: 'dashboard',
   varieties: [],
@@ -13,7 +153,13 @@ const state = {
 const API = '';
 
 async function api(path, method = 'GET', body = null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const opts = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + getToken()
+    }
+  };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(API + path, opts);
   return res.json();
@@ -30,14 +176,14 @@ async function loadAll() {
     api('/api/stats'),
     api('/api/viability'),
   ]);
-  state.varieties = varieties;
-  state.seedLots = seedLots;
-  state.plants = plants;
-  state.projects = projects;
-  state.harvest = harvest;
-  state.species = species;
-  state.stats = stats;
-  state.viability = viability;
+  state.varieties = Array.isArray(varieties) ? varieties : [];
+  state.seedLots = Array.isArray(seedLots) ? seedLots : [];
+  state.plants = Array.isArray(plants) ? plants : [];
+  state.projects = Array.isArray(projects) ? projects : [];
+  state.harvest = Array.isArray(harvest) ? harvest : [];
+  state.species = Array.isArray(species) ? species : [];
+  state.stats = stats || {};
+  state.viability = Array.isArray(viability) ? viability : [];
 }
 
 function navigate(page) {
@@ -102,7 +248,7 @@ function renderDashboard() {
               <span style="margin-left:8px;font-size:0.85rem;color:var(--text-muted);">${lot.variety_name}</span>
             </div>
             <span style="font-size:0.85rem;font-weight:700;color:${lot.status === 'expired' ? '#991b1b' : '#92400e'};">
-              ${lot.status === 'expired' ? '🔴 Expired' : `🟡 Expires in ${lot.yearsLeft} year${lot.yearsLeft === 1 ? '' : 's'}`}
+              ${lot.status === 'expired' ? '🔴 Expired' : '🟡 Expires in ' + lot.yearsLeft + ' year' + (lot.yearsLeft === 1 ? '' : 's')}
             </span>
           </div>
         `).join('')}
@@ -134,7 +280,7 @@ function renderDashboard() {
         </div>`}
       </div>
     </div>
-    <div class="card" style="margin-top:20px;">
+    <div class="card" style="margin-top:0;">
       <div class="card-title">🧬 Active Breeding Projects</div>
       ${state.projects.filter(p => p.status === 'active').length === 0
         ? '<p style="color:var(--text-muted);font-size:0.9rem;">No active breeding projects.</p>'
@@ -236,26 +382,14 @@ async function submitVariety() {
   const name = document.getElementById('f-vname').value.trim();
   const species_code = document.getElementById('f-species').value;
   if (!name || !species_code) return alert('Name and species are required');
-  await api('/api/varieties', 'POST', {
-    name, species_code,
-    type: document.getElementById('f-type').value,
-    year_acquired: document.getElementById('f-year').value || null,
-    source: document.getElementById('f-source').value,
-    description: document.getElementById('f-desc').value,
-  });
+  await api('/api/varieties', 'POST', { name, species_code, type: document.getElementById('f-type').value, year_acquired: document.getElementById('f-year').value || null, source: document.getElementById('f-source').value, description: document.getElementById('f-desc').value });
   closeModal(); await loadAll(); render();
 }
 
 async function submitEditVariety(code) {
   const name = document.getElementById('f-vname').value.trim();
   if (!name) return alert('Name is required');
-  await api('/api/varieties/' + code, 'PUT', {
-    name,
-    type: document.getElementById('f-type').value,
-    year_acquired: document.getElementById('f-year').value || null,
-    source: document.getElementById('f-source').value,
-    description: document.getElementById('f-desc').value,
-  });
+  await api('/api/varieties/' + code, 'PUT', { name, type: document.getElementById('f-type').value, year_acquired: document.getElementById('f-year').value || null, source: document.getElementById('f-source').value, description: document.getElementById('f-desc').value });
   closeModal(); await loadAll(); render();
 }
 
@@ -348,7 +482,7 @@ function seedLotForm(lot) {
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Germination Rate %</label>
-        <input class="form-control" id="f-germrate" type="number" min="0" max="100" value="${lot ? lot.germination_rate || '' : ''}" placeholder="e.g. 90">
+        <input class="form-control" id="f-germrate" type="number" min="0" max="100" value="${lot ? lot.germination_rate || '' : ''}">
       </div>
       <div class="form-group">
         <label class="form-label">Last Tested Date</label>
@@ -357,11 +491,11 @@ function seedLotForm(lot) {
     </div>
     <div class="form-group">
       <label class="form-label">Mother Plant Designation</label>
-      <input class="form-control" id="f-mother" value="${lot ? lot.mother_designation || '' : ''}" placeholder="e.g. CUC-S8-G1-2024-P02">
+      <input class="form-control" id="f-mother" value="${lot ? lot.mother_designation || '' : ''}">
     </div>
     <div class="form-group">
       <label class="form-label">Father Plant Designation</label>
-      <input class="form-control" id="f-father" value="${lot ? lot.father_designation || '' : ''}" placeholder="e.g. CUC-PB-G1-2024-P01">
+      <input class="form-control" id="f-father" value="${lot ? lot.father_designation || '' : ''}">
     </div>
     <div class="form-group">
       <label class="form-label">Notes</label>
@@ -379,28 +513,13 @@ async function submitSeedLot() {
   const generation = document.getElementById('f-gen').value;
   const year_saved = document.getElementById('f-yearsaved').value;
   if (!variety_code || !generation || !year_saved) return alert('Variety, generation and year are required');
-  const result = await api('/api/seed-lots', 'POST', {
-    variety_code, generation: parseInt(generation), year_saved: parseInt(year_saved),
-    quantity_estimate: document.getElementById('f-qty').value || null,
-    storage_location: document.getElementById('f-storage').value,
-    mother_designation: document.getElementById('f-mother').value,
-    father_designation: document.getElementById('f-father').value,
-    notes: document.getElementById('f-notes').value,
-  });
+  const result = await api('/api/seed-lots', 'POST', { variety_code, generation: parseInt(generation), year_saved: parseInt(year_saved), quantity_estimate: document.getElementById('f-qty').value || null, storage_location: document.getElementById('f-storage').value, mother_designation: document.getElementById('f-mother').value, father_designation: document.getElementById('f-father').value, notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ Seed lot created!\nDesignation: ' + result.designation), 100);
 }
 
 async function submitEditSeedLot(designation) {
-  await api('/api/seed-lots/' + designation, 'PUT', {
-    quantity_estimate: document.getElementById('f-qty').value || null,
-    storage_location: document.getElementById('f-storage').value,
-    germination_rate: document.getElementById('f-germrate').value || null,
-    last_tested: document.getElementById('f-lasttest').value || null,
-    mother_designation: document.getElementById('f-mother').value,
-    father_designation: document.getElementById('f-father').value,
-    notes: document.getElementById('f-notes').value,
-  });
+  await api('/api/seed-lots/' + designation, 'PUT', { quantity_estimate: document.getElementById('f-qty').value || null, storage_location: document.getElementById('f-storage').value, germination_rate: document.getElementById('f-germrate').value || null, last_tested: document.getElementById('f-lasttest').value || null, mother_designation: document.getElementById('f-mother').value, father_designation: document.getElementById('f-father').value, notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
 }
 
@@ -432,9 +551,7 @@ function renderPlants() {
               <td>${p.selected_for_seed ? '<span class="seed-star">⭐ Selected</span>' : '—'}</td>
               <td style="max-width:150px;font-size:0.85rem;">${p.notes || '—'}</td>
               <td style="display:flex;gap:4px;flex-wrap:wrap;">
-                <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">
-                  ${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}
-                </button>
+                <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
                 <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
                 <button class="btn btn-danger btn-sm" onclick="deletePlant('${p.designation}')">🗑️</button>
               </td>
@@ -534,36 +651,20 @@ async function submitPlants() {
   const seed_lot_designation = document.getElementById('f-lot').value;
   const count = document.getElementById('f-count').value;
   if (!seed_lot_designation) return alert('Select a seed lot');
-  const result = await api('/api/plants', 'POST', {
-    seed_lot_designation,
-    season_year: new Date().getFullYear(),
-    season_type: document.getElementById('f-season').value,
-    count: parseInt(count),
-    notes: document.getElementById('f-notes').value,
-  });
+  const result = await api('/api/plants', 'POST', { seed_lot_designation, season_year: new Date().getFullYear(), season_type: document.getElementById('f-season').value, count: parseInt(count), notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ ' + result.length + ' plant(s) added!\nFirst: ' + result[0].designation), 100);
 }
 
 async function submitEditPlant(designation) {
   const plant = state.plants.find(p => p.designation === designation);
-  await api('/api/plants/' + designation, 'PUT', {
-    selected_for_seed: document.getElementById('f-seedsave').value === 'true',
-    notes: document.getElementById('f-notes').value,
-    season_type: document.getElementById('f-season').value,
-    traits: plant.traits || {},
-  });
+  await api('/api/plants/' + designation, 'PUT', { selected_for_seed: document.getElementById('f-seedsave').value === 'true', notes: document.getElementById('f-notes').value, season_type: document.getElementById('f-season').value, traits: plant.traits || {} });
   closeModal(); await loadAll(); render();
 }
 
 async function toggleSeedSelect(designation, selected) {
   const plant = state.plants.find(p => p.designation === designation);
-  await api('/api/plants/' + designation, 'PUT', {
-    selected_for_seed: selected,
-    notes: plant.notes,
-    season_type: plant.season_type,
-    traits: plant.traits || {},
-  });
+  await api('/api/plants/' + designation, 'PUT', { selected_for_seed: selected, notes: plant.notes, season_type: plant.season_type, traits: plant.traits || {} });
   await loadAll(); render();
 }
 
@@ -677,31 +778,12 @@ function showEditHarvest(id) {
 async function submitHarvest() {
   const plant_designation = document.getElementById('f-plant').value;
   if (!plant_designation) return alert('Select a plant');
-  await api('/api/harvest', 'POST', {
-    plant_designation,
-    harvest_date: document.getElementById('f-date').value,
-    fruit_length_inches: document.getElementById('f-length').value || null,
-    fruit_diameter_inches: document.getElementById('f-diameter').value || null,
-    fruit_weight_oz: document.getElementById('f-weight').value || null,
-    seed_count: document.getElementById('f-seeds').value || null,
-    condition: document.getElementById('f-condition').value,
-    processing_method: document.getElementById('f-method').value,
-    notes: document.getElementById('f-notes').value,
-  });
+  await api('/api/harvest', 'POST', { plant_designation, harvest_date: document.getElementById('f-date').value, fruit_length_inches: document.getElementById('f-length').value || null, fruit_diameter_inches: document.getElementById('f-diameter').value || null, fruit_weight_oz: document.getElementById('f-weight').value || null, seed_count: document.getElementById('f-seeds').value || null, condition: document.getElementById('f-condition').value, processing_method: document.getElementById('f-method').value, notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
 }
 
 async function submitEditHarvest(id) {
-  await api('/api/harvest/' + id, 'PUT', {
-    harvest_date: document.getElementById('f-date').value,
-    fruit_length_inches: document.getElementById('f-length').value || null,
-    fruit_diameter_inches: document.getElementById('f-diameter').value || null,
-    fruit_weight_oz: document.getElementById('f-weight').value || null,
-    seed_count: document.getElementById('f-seeds').value || null,
-    condition: document.getElementById('f-condition').value,
-    processing_method: document.getElementById('f-method').value,
-    notes: document.getElementById('f-notes').value,
-  });
+  await api('/api/harvest/' + id, 'PUT', { harvest_date: document.getElementById('f-date').value, fruit_length_inches: document.getElementById('f-length').value || null, fruit_diameter_inches: document.getElementById('f-diameter').value || null, fruit_weight_oz: document.getElementById('f-weight').value || null, seed_count: document.getElementById('f-seeds').value || null, condition: document.getElementById('f-condition').value, processing_method: document.getElementById('f-method').value, notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
 }
 
@@ -748,9 +830,7 @@ function renderProjects() {
             ${state.plants.filter(pl => pl.designation.startsWith(p.code)).length === 0
               ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants logged yet.</p>'
               : `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-                ${state.plants.filter(pl => pl.designation.startsWith(p.code)).map(pl =>
-                  `<span class="designation">${pl.designation}</span>`
-                ).join('')}
+                ${state.plants.filter(pl => pl.designation.startsWith(p.code)).map(pl => `<span class="designation">${pl.designation}</span>`).join('')}
               </div>`}
           </div>
         </div>
@@ -805,10 +885,7 @@ async function submitProject() {
   if (!name) return alert('Project name is required');
   const traitsRaw = document.getElementById('f-traits').value;
   const target_traits = traitsRaw ? traitsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
-  const result = await api('/api/projects', 'POST', {
-    name, description: document.getElementById('f-pdesc').value,
-    started_year: document.getElementById('f-pyear').value, target_traits,
-  });
+  const result = await api('/api/projects', 'POST', { name, description: document.getElementById('f-pdesc').value, started_year: document.getElementById('f-pyear').value, target_traits });
   closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ Project created!\nCode: ' + result.code), 100);
 }
@@ -816,11 +893,7 @@ async function submitProject() {
 async function submitEditProject(code) {
   const traitsRaw = document.getElementById('f-traits').value;
   const target_traits = traitsRaw ? traitsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
-  await api('/api/projects/' + code, 'PUT', {
-    name: document.getElementById('f-pname').value,
-    description: document.getElementById('f-pdesc').value,
-    target_traits, status: document.getElementById('f-status').value,
-  });
+  await api('/api/projects/' + code, 'PUT', { name: document.getElementById('f-pname').value, description: document.getElementById('f-pdesc').value, target_traits, status: document.getElementById('f-status').value });
   closeModal(); await loadAll(); render();
 }
 
@@ -838,25 +911,27 @@ function renderSettings() {
     <div class="card">
       <div class="settings-section-title">💾 Backup & Restore</div>
       <div class="settings-row">
-        <div class="settings-row-info">
-          <h4>Export JSON Backup</h4>
-          <p>Download a full backup of all your data as a JSON file.</p>
-        </div>
+        <div class="settings-row-info"><h4>Export JSON Backup</h4><p>Download a full backup of all your data as a JSON file.</p></div>
         <button class="btn btn-primary" onclick="exportBackup()">⬇️ Export JSON</button>
       </div>
       <div class="settings-row">
-        <div class="settings-row-info">
-          <h4>Export CSV</h4>
-          <p>Download all data as a CSV file — open in Excel or any spreadsheet app.</p>
-        </div>
+        <div class="settings-row-info"><h4>Export CSV</h4><p>Download all data as a CSV file — open in Excel or any spreadsheet app.</p></div>
         <button class="btn btn-secondary" onclick="exportCSV()">⬇️ Export CSV</button>
       </div>
       <div class="settings-row">
-        <div class="settings-row-info">
-          <h4>Import Backup</h4>
-          <p>Restore from a previously exported JSON backup. Existing records will not be overwritten.</p>
-        </div>
+        <div class="settings-row-info"><h4>Import Backup</h4><p>Restore from a previously exported JSON backup. Existing records will not be overwritten.</p></div>
         <button class="btn btn-secondary" onclick="triggerImport()">⬆️ Import Backup</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="settings-section-title">🔒 Account</div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Change Password</h4><p>Update your SeedVault password.</p></div>
+        <button class="btn btn-secondary" onclick="showChangePassword()">Change Password</button>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Sign Out</h4><p>Sign out of SeedVault on this device.</p></div>
+        <button class="btn btn-danger" onclick="logout()">⏏️ Sign Out</button>
       </div>
     </div>
     <div class="card">
@@ -888,20 +963,50 @@ function renderSettings() {
         <div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.0.0</p></div>
       </div>
       <div class="settings-row">
-        <div class="settings-row-info">
-          <h4>Database Records</h4>
-          <p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season</p>
-        </div>
+        <div class="settings-row-info"><h4>Database Records</h4><p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season</p></div>
       </div>
       <div class="settings-row">
-        <div class="settings-row-info">
-          <h4>Source Code</h4>
-          <p>github.com/Duhato/seedvault — AGPL-3.0 License</p>
-        </div>
+        <div class="settings-row-info"><h4>Source Code</h4><p>github.com/Duhato/seedvault — AGPL-3.0 License</p></div>
         <a href="https://github.com/Duhato/seedvault" target="_blank" class="btn btn-secondary">View on GitHub</a>
       </div>
     </div>
   `;
+}
+
+function showChangePassword() {
+  openModal('Change Password', `
+    <div class="form-group">
+      <label class="form-label">Current Password</label>
+      <input class="form-control" id="f-curpw" type="password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">New Password</label>
+      <input class="form-control" id="f-newpw" type="password" placeholder="Min 8 characters">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Confirm New Password</label>
+      <input class="form-control" id="f-confirmpw" type="password">
+    </div>
+    <div id="pw-error" class="alert alert-danger hidden"></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitChangePassword()">Change Password</button>
+    </div>
+  `);
+}
+
+async function submitChangePassword() {
+  const currentPassword = document.getElementById('f-curpw').value;
+  const newPassword = document.getElementById('f-newpw').value;
+  const confirm = document.getElementById('f-confirmpw').value;
+  const errEl = document.getElementById('pw-error');
+  errEl.classList.add('hidden');
+  if (newPassword.length < 8) { errEl.textContent = 'Password must be at least 8 characters'; errEl.classList.remove('hidden'); return; }
+  if (newPassword !== confirm) { errEl.textContent = 'Passwords do not match'; errEl.classList.remove('hidden'); return; }
+  const result = await api('/api/auth/change-password', 'POST', { currentPassword, newPassword });
+  if (result.error) { errEl.textContent = result.error; errEl.classList.remove('hidden'); return; }
+  closeModal();
+  alert('✅ Password changed successfully!');
 }
 
 function showAddSpecies() {
@@ -960,7 +1065,7 @@ async function deleteSpecies(code) {
 
 async function exportBackup() {
   try {
-    const res = await fetch('/api/backup/export');
+    const res = await fetch('/api/backup/export', { headers: { 'Authorization': 'Bearer ' + getToken() } });
     const blob = await res.blob();
     const date = new Date().toISOString().split('T')[0];
     const url = URL.createObjectURL(blob);
@@ -972,7 +1077,7 @@ async function exportBackup() {
 
 async function exportCSV() {
   try {
-    const res = await fetch('/api/backup/export-csv');
+    const res = await fetch('/api/backup/export-csv', { headers: { 'Authorization': 'Bearer ' + getToken() } });
     const blob = await res.blob();
     const date = new Date().toISOString().split('T')[0];
     const url = URL.createObjectURL(blob);
@@ -982,9 +1087,7 @@ async function exportCSV() {
   } catch (err) { alert('CSV export failed: ' + err.message); }
 }
 
-function triggerImport() {
-  document.getElementById('import-file-input').click();
-}
+function triggerImport() { document.getElementById('import-file-input').click(); }
 
 async function handleImportFile(e) {
   const file = e.target.files[0];
@@ -1022,9 +1125,7 @@ async function confirmImport(backup) {
   try {
     const result = await api('/api/backup/import', 'POST', backup);
     closeModal(); await loadAll(); render();
-    setTimeout(() => {
-      alert('✅ Import complete!\n\nImported:\n  Varieties: ' + result.imported.varieties + '\n  Seed Lots: ' + result.imported.seed_lots + '\n  Plants: ' + result.imported.plants + '\n  Projects: ' + result.imported.breeding_projects + '\n\nSkipped:\n  Varieties: ' + result.skipped.varieties + '\n  Seed Lots: ' + result.skipped.seed_lots + '\n  Plants: ' + result.skipped.plants);
-    }, 100);
+    setTimeout(() => alert('✅ Import complete!\n\nImported:\n  Varieties: ' + result.imported.varieties + '\n  Seed Lots: ' + result.imported.seed_lots + '\n  Plants: ' + result.imported.plants + '\n  Projects: ' + result.imported.breeding_projects + '\n\nSkipped:\n  Varieties: ' + result.skipped.varieties + '\n  Seed Lots: ' + result.skipped.seed_lots + '\n  Plants: ' + result.skipped.plants), 100);
   } catch (err) { alert('Import failed: ' + err.message); }
 }
 
@@ -1043,6 +1144,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target === document.getElementById('modal-overlay')) closeModal();
   });
   document.getElementById('import-file-input').addEventListener('change', handleImportFile);
-  await loadAll();
-  render();
+
+  // Handle enter key on login form
+  document.getElementById('login-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitLogin();
+  });
+  document.getElementById('login-username').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitLogin();
+  });
+
+  await checkAuth();
+  if (getToken()) {
+    await loadAll();
+    render();
+  }
 });
