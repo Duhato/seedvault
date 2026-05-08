@@ -4,10 +4,7 @@ function setTheme(theme) {
   localStorage.setItem('seedvault_theme', theme);
   document.documentElement.setAttribute('data-theme', theme);
 }
-function toggleTheme() {
-  setTheme(getTheme() === 'light' ? 'dark' : 'light');
-  render();
-}
+function toggleTheme() { setTheme(getTheme() === 'light' ? 'dark' : 'light'); render(); }
 
 // ==================== AUTH ====================
 const TOKEN_KEY = 'seedvault_token';
@@ -99,7 +96,8 @@ function logout() { clearToken(); showLogin(); }
 const state = {
   page: 'dashboard',
   varieties: [], seedLots: [], plants: [], projects: [],
-  harvest: [], species: [], stats: {}, viability: [], germination: [], users: []
+  harvest: [], species: [], stats: {}, viability: [],
+  germination: [], users: [], locations: [], sources: []
 };
 
 async function api(path, method = 'GET', body = null) {
@@ -112,7 +110,8 @@ async function api(path, method = 'GET', body = null) {
 async function loadAll() {
   const calls = [
     api('/api/varieties'), api('/api/seed-lots'), api('/api/plants'), api('/api/projects'),
-    api('/api/harvest'), api('/api/species'), api('/api/stats'), api('/api/viability'), api('/api/germination'),
+    api('/api/harvest'), api('/api/species'), api('/api/stats'), api('/api/viability'),
+    api('/api/germination'), api('/api/locations'), api('/api/sources'),
   ];
   if (getRole() === 'admin') calls.push(api('/api/users'));
   const results = await Promise.all(calls);
@@ -125,7 +124,9 @@ async function loadAll() {
   state.stats = results[6] || {};
   state.viability = Array.isArray(results[7]) ? results[7] : [];
   state.germination = Array.isArray(results[8]) ? results[8] : [];
-  state.users = results[9] && Array.isArray(results[9]) ? results[9] : [];
+  state.locations = Array.isArray(results[9]) ? results[9] : [];
+  state.sources = Array.isArray(results[10]) ? results[10] : [];
+  state.users = results[11] && Array.isArray(results[11]) ? results[11] : [];
 }
 
 function navigate(page) {
@@ -154,6 +155,7 @@ function render() {
     case 'harvest': main.innerHTML = renderHarvest(); break;
     case 'projects': main.innerHTML = renderProjects(); break;
     case 'germination': main.innerHTML = renderGermination(); break;
+    case 'locations': main.innerHTML = renderLocations(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
   }
 }
@@ -178,10 +180,10 @@ function renderDashboard() {
       <div class="card-title">⚠️ Seed Viability Warnings</div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         ${state.viability.map(lot => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${lot.status === 'expired' ? '#fee2e2' : '#fef3c7'};border-radius:6px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${lot.status === 'expired' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'};border-radius:6px;">
             <div><span class="designation" style="cursor:pointer;" onclick="navigate('seedlots')">${lot.designation}</span>
             <span style="margin-left:8px;font-size:0.85rem;color:var(--text-muted);">${lot.variety_name}</span></div>
-            <span style="font-size:0.85rem;font-weight:700;color:${lot.status === 'expired' ? '#991b1b' : '#92400e'};">
+            <span style="font-size:0.85rem;font-weight:700;color:${lot.status === 'expired' ? '#ef4444' : '#f59e0b'};">
               ${lot.status === 'expired' ? '🔴 Expired' : '🟡 Expires in ' + lot.yearsLeft + ' year' + (lot.yearsLeft === 1 ? '' : 's')}
             </span>
           </div>
@@ -227,6 +229,20 @@ function renderDashboard() {
           </div>
         `).join('')}
     </div>
+    ${state.locations.length > 0 ? `
+    <div class="card">
+      <div class="card-title">📍 Garden Locations</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">
+        ${state.locations.filter(l => l.active).map(loc => {
+          const plantCount = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear()).length;
+          return `<div class="clickable-row" onclick="navigate('locations')" style="padding:12px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+            <div style="font-weight:700;font-size:0.9rem;">${loc.name}</div>
+            <div style="font-size:0.8rem;color:var(--text-muted);">${loc.type}</div>
+            <div style="font-size:0.8rem;margin-top:4px;"><span class="gen-badge">${plantCount}</span> plant${plantCount !== 1 ? 's' : ''}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
   `;
 }
 
@@ -319,9 +335,9 @@ function renderSeedLots() {
         <tbody>${state.seedLots.map(lot => {
           const maxYears = viabilityYears[lot.species_code] || 3;
           const yearsLeft = maxYears - (currentYear - lot.year_saved);
-          let viabilityBadge = '<span style="color:#16a34a;font-weight:600;">🟢 Good</span>';
-          if (yearsLeft <= 0) viabilityBadge = '<span style="color:#dc2626;font-weight:600;">🔴 Expired</span>';
-          else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#d97706;font-weight:600;">🟡 Expiring</span>';
+          let viabilityBadge = '<span style="color:#22c55e;font-weight:600;">🟢 Good</span>';
+          if (yearsLeft <= 0) viabilityBadge = '<span style="color:#ef4444;font-weight:600;">🔴 Expired</span>';
+          else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#f59e0b;font-weight:600;">🟡 Expiring</span>';
           return `<tr>
             <td><span class="designation">${lot.designation}</span></td>
             <td>${lot.variety_name || lot.variety_code}</td>
@@ -406,11 +422,11 @@ function renderPlants() {
     <div class="card">
       ${thisYear.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🪴</div><p>No plants logged this season yet.</p></div>`
       : `<div class="table-wrap"><table>
-        <thead><tr><th>Designation</th><th>Variety</th><th>Seed Lot</th><th>Season</th><th>Seed Save</th><th>Notes</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Season</th><th>Seed Save</th><th>Notes</th><th>Actions</th></tr></thead>
         <tbody>${thisYear.map(p => `<tr>
           <td><span class="designation">${p.designation}</span></td>
           <td>${p.variety_name || '—'}</td>
-          <td><span class="designation" style="font-size:0.75rem;">${p.seed_lot_designation}</span></td>
+          <td>${p.location_name ? '<span style="font-size:0.85rem;">📍 ' + p.location_name + '</span>' : '—'}</td>
           <td>${p.season_type}</td>
           <td>${p.selected_for_seed ? '<span class="seed-star">⭐ Selected</span>' : '—'}</td>
           <td style="max-width:150px;font-size:0.85rem;">${p.notes || '—'}</td>
@@ -460,6 +476,12 @@ function showAddPlants(preselectedLot = '') {
         </select>
       </div>
     </div>
+    <div class="form-group"><label class="form-label">Garden Location</label>
+      <select class="form-control" id="f-location">
+        <option value="">No location assigned</option>
+        ${state.locations.filter(l => l.active).map(l => `<option value="${l.id}">${l.name} (${l.type})</option>`).join('')}
+      </select>
+    </div>
     <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2"></textarea></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -479,6 +501,12 @@ function showEditPlant(designation) {
         <option value="fall" ${p.season_type === 'fall' ? 'selected' : ''}>Fall</option>
       </select>
     </div>
+    <div class="form-group"><label class="form-label">Garden Location</label>
+      <select class="form-control" id="f-location">
+        <option value="">No location assigned</option>
+        ${state.locations.filter(l => l.active).map(l => `<option value="${l.id}" ${p.location_id === l.id ? 'selected' : ''}>${l.name} (${l.type})</option>`).join('')}
+      </select>
+    </div>
     <div class="form-group"><label class="form-label">Selected for Seed Save</label>
       <select class="form-control" id="f-seedsave">
         <option value="false" ${!p.selected_for_seed ? 'selected' : ''}>No</option>
@@ -496,26 +524,125 @@ function showEditPlant(designation) {
 async function submitPlants() {
   const seed_lot_designation = document.getElementById('f-lot').value;
   if (!seed_lot_designation) return alert('Select a seed lot');
-  const result = await api('/api/plants', 'POST', { seed_lot_designation, season_year: new Date().getFullYear(), season_type: document.getElementById('f-season').value, count: parseInt(document.getElementById('f-count').value), notes: document.getElementById('f-notes').value });
+  const location_id = document.getElementById('f-location').value;
+  const result = await api('/api/plants', 'POST', { seed_lot_designation, season_year: new Date().getFullYear(), season_type: document.getElementById('f-season').value, count: parseInt(document.getElementById('f-count').value), location_id: location_id || null, notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ ' + result.length + ' plant(s) added!\nFirst: ' + result[0].designation), 100);
 }
 
 async function submitEditPlant(designation) {
   const plant = state.plants.find(p => p.designation === designation);
-  await api('/api/plants/' + designation, 'PUT', { selected_for_seed: document.getElementById('f-seedsave').value === 'true', notes: document.getElementById('f-notes').value, season_type: document.getElementById('f-season').value, traits: plant.traits || {} });
+  const location_id = document.getElementById('f-location').value;
+  await api('/api/plants/' + designation, 'PUT', { selected_for_seed: document.getElementById('f-seedsave').value === 'true', notes: document.getElementById('f-notes').value, season_type: document.getElementById('f-season').value, location_id: location_id || null, traits: plant.traits || {} });
   closeModal(); await loadAll(); render();
 }
 
 async function toggleSeedSelect(designation, selected) {
   const plant = state.plants.find(p => p.designation === designation);
-  await api('/api/plants/' + designation, 'PUT', { selected_for_seed: selected, notes: plant.notes, season_type: plant.season_type, traits: plant.traits || {} });
+  await api('/api/plants/' + designation, 'PUT', { selected_for_seed: selected, notes: plant.notes, season_type: plant.season_type, location_id: plant.location_id, traits: plant.traits || {} });
   await loadAll(); render();
 }
 
 async function deletePlant(designation) {
   if (!confirm('Delete plant ' + designation + '? This cannot be undone.')) return;
   await api('/api/plants/' + designation, 'DELETE'); await loadAll(); render();
+}
+
+// GARDEN LOCATIONS
+function renderLocations() {
+  return `
+    <div class="page-header"><h1 class="page-title">📍 Garden Locations</h1><button class="btn btn-primary" onclick="showAddLocation()">+ Add Location</button></div>
+    ${state.locations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">📍</div><p>No garden locations yet. Add your beds, grow bags and containers.</p></div></div>`
+    : state.locations.map(loc => {
+      const plantCount = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear()).length;
+      const plants = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear());
+      return `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+                <strong style="font-size:1.1rem;">${loc.name}</strong>
+                <span class="tag tag-active">${loc.type}</span>
+                ${!loc.active ? '<span class="tag tag-complete">Inactive</span>' : ''}
+              </div>
+              ${loc.size_description ? `<div style="font-size:0.85rem;color:var(--text-muted);">📐 ${loc.size_description}</div>` : ''}
+              ${loc.sun_exposure ? `<div style="font-size:0.85rem;color:var(--text-muted);">☀️ ${loc.sun_exposure}</div>` : ''}
+              ${loc.soil_notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">🌱 ${loc.soil_notes}</div>` : ''}
+              ${loc.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${loc.notes}</div>` : ''}
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-secondary btn-sm" onclick="showEditLocation(${loc.id})">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteLocation(${loc.id})">🗑️</button>
+            </div>
+          </div>
+          <div style="margin-top:16px;">
+            <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Plants this season (${plantCount}):</div>
+            ${plants.length === 0 ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants assigned yet.</p>'
+            : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${plants.map(p => `<span class="designation" style="font-size:0.75rem;">${p.designation}</span>`).join('')}</div>`}
+          </div>
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+function locationForm(loc) {
+  const types = ['Raised Bed', 'Fabric Grow Bag', 'In Ground', 'Container/Pot', 'Greenhouse Bed', 'Greenhouse Bench', 'Other'];
+  const sunOptions = ['Full Sun', 'Partial Sun', 'Partial Shade', 'Full Shade'];
+  return `
+    <div class="form-group"><label class="form-label">Location Name *</label><input class="form-control" id="f-lname" value="${loc ? loc.name : ''}" placeholder="e.g. Front Bed, Grow Bag Table"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type *</label>
+        <select class="form-control" id="f-ltype">
+          ${types.map(t => `<option value="${t}" ${loc && loc.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Size / Dimensions</label><input class="form-control" id="f-lsize" value="${loc ? loc.size_description || '' : ''}" placeholder="e.g. 4x5 ft, 5 gallon"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Sun Exposure</label>
+        <select class="form-control" id="f-lsun">
+          <option value="">Select...</option>
+          ${sunOptions.map(s => `<option value="${s}" ${loc && loc.sun_exposure === s ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      ${loc ? `<div class="form-group"><label class="form-label">Status</label>
+        <select class="form-control" id="f-lactive">
+          <option value="true" ${loc.active ? 'selected' : ''}>Active</option>
+          <option value="false" ${!loc.active ? 'selected' : ''}>Inactive</option>
+        </select>
+      </div>` : ''}
+    </div>
+    <div class="form-group"><label class="form-label">Soil / Mix Notes</label><textarea class="form-control" id="f-lsoil" rows="2" placeholder="e.g. Kellogg raised bed mix, amended with cow manure">${loc ? loc.soil_notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-lnotes" rows="2" placeholder="Trellis type, arch, other notes...">${loc ? loc.notes || '' : ''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="${loc ? `submitEditLocation(${loc.id})` : 'submitLocation()'}">${loc ? 'Save Changes' : 'Add Location'}</button>
+    </div>
+  `;
+}
+
+function showAddLocation() { openModal('Add Garden Location', locationForm(null)); }
+function showEditLocation(id) { openModal('Edit Location', locationForm(state.locations.find(l => l.id === id))); }
+
+async function submitLocation() {
+  const name = document.getElementById('f-lname').value.trim();
+  const type = document.getElementById('f-ltype').value;
+  if (!name || !type) return alert('Name and type are required');
+  await api('/api/locations', 'POST', { name, type, size_description: document.getElementById('f-lsize').value, sun_exposure: document.getElementById('f-lsun').value, soil_notes: document.getElementById('f-lsoil').value, notes: document.getElementById('f-lnotes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitEditLocation(id) {
+  const name = document.getElementById('f-lname').value.trim();
+  if (!name) return alert('Name is required');
+  await api('/api/locations/' + id, 'PUT', { name, type: document.getElementById('f-ltype').value, size_description: document.getElementById('f-lsize').value, sun_exposure: document.getElementById('f-lsun').value, soil_notes: document.getElementById('f-lsoil').value, notes: document.getElementById('f-lnotes').value, active: document.getElementById('f-lactive').value === 'true' });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteLocation(id) {
+  if (!confirm('Delete this location? This cannot be undone.')) return;
+  await api('/api/locations/' + id, 'DELETE'); await loadAll(); render();
 }
 
 function renderHarvest() {
@@ -610,7 +737,7 @@ function renderGermination() {
   return `
     <div class="page-header"><h1 class="page-title">🌿 Germination</h1><button class="btn btn-primary" onclick="showAddGermination()">+ Start Test</button></div>
     <div class="card">
-      ${state.germination.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>No germination tests yet. Start one to track your seeds!</p></div>`
+      ${state.germination.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>No germination tests yet.</p></div>`
       : `<div class="table-wrap"><table>
         <thead><tr><th>Seed Lot</th><th>Variety</th><th>Started</th><th>Planted</th><th>Germinated</th><th>Rate</th><th>Days</th><th>Thinned</th><th>Remaining</th><th>Actions</th></tr></thead>
         <tbody>${state.germination.map(g => {
@@ -665,7 +792,7 @@ function showUpdateGermination(id) {
       <strong>${g.seeds_planted} seeds planted</strong> on ${new Date(g.date_started).toLocaleDateString()}
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Seeds Germinated *</label><input class="form-control" id="f-germinated" type="number" min="0" max="${g.seeds_planted}" placeholder="How many came up?"></div>
+      <div class="form-group"><label class="form-label">Seeds Germinated *</label><input class="form-control" id="f-germinated" type="number" min="0" max="${g.seeds_planted}"></div>
       <div class="form-group"><label class="form-label">Date Germinated *</label><input class="form-control" id="f-dategerm" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
     </div>
     <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2">${g.notes || ''}</textarea></div>
@@ -680,13 +807,13 @@ function showThinningLog(id) {
   const g = state.germination.find(x => x.id === id);
   openModal('Log Thinning — ' + g.seed_lot_designation, `
     <div style="background:var(--green-bg);padding:12px;border-radius:6px;margin-bottom:16px;">
-      <strong>${g.seeds_germinated} of ${g.seeds_planted} germinated</strong> — log thinning below
+      <strong>${g.seeds_germinated} of ${g.seeds_planted} germinated</strong>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Seeds Thinned *</label><input class="form-control" id="f-thinned" type="number" min="0" max="${g.seeds_germinated}" placeholder="How many removed?"></div>
+      <div class="form-group"><label class="form-label">Seeds Thinned *</label><input class="form-control" id="f-thinned" type="number" min="0" max="${g.seeds_germinated}"></div>
       <div class="form-group"><label class="form-label">Date Thinned</label><input class="form-control" id="f-datethinned" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
     </div>
-    <div class="form-group"><label class="form-label">Plants Remaining *</label><input class="form-control" id="f-remaining" type="number" min="0" placeholder="How many kept?"></div>
+    <div class="form-group"><label class="form-label">Plants Remaining *</label><input class="form-control" id="f-remaining" type="number" min="0"></div>
     <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2" placeholder="Kept strongest seedling from each pot..."></textarea></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -749,11 +876,11 @@ function renderProjects() {
         </div>
         ${p.target_traits && p.target_traits.length > 0 ? `
         <div style="margin-top:16px;">
-          <div style="font-size:0.85rem;font-weight:700;color:var(--green-dark);margin-bottom:8px;">Target Traits:</div>
+          <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Target Traits:</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px;">${p.target_traits.map(t => `<span class="tag tag-heirloom">${t}</span>`).join('')}</div>
         </div>` : ''}
         <div style="margin-top:16px;">
-          <div style="font-size:0.85rem;font-weight:700;color:var(--green-dark);margin-bottom:8px;">Plants in this project:</div>
+          <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Plants in this project:</div>
           ${state.plants.filter(pl => pl.designation.startsWith(p.code)).length === 0
             ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants logged yet.</p>'
             : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${state.plants.filter(pl => pl.designation.startsWith(p.code)).map(pl => `<span class="designation">${pl.designation}</span>`).join('')}</div>`}
@@ -777,7 +904,7 @@ function projectForm(p) {
         </select>
       </div>` : ''}
     </div>
-    <div class="form-group"><label class="form-label">Target Traits (comma separated)</label><input class="form-control" id="f-traits" value="${p && p.target_traits ? p.target_traits.join(', ') : ''}" placeholder="e.g. mild heat, thick walls, poblano size"></div>
+    <div class="form-group"><label class="form-label">Target Traits (comma separated)</label><input class="form-control" id="f-traits" value="${p && p.target_traits ? p.target_traits.join(', ') : ''}" placeholder="e.g. mild heat, thick walls"></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="${p ? `submitEditProject('${p.code}')` : 'submitProject()'}">${p ? 'Save Changes' : 'Create Project'}</button>
@@ -818,27 +945,22 @@ function renderSettings() {
     <div class="card">
       <div class="settings-section-title">🎨 Appearance</div>
       <div class="settings-row">
-        <div class="settings-row-info">
-          <h4>Dark Mode</h4>
-          <p>Switch between light and dark theme.</p>
-        </div>
-        <button class="btn ${isDark ? 'btn-primary' : 'btn-secondary'}" onclick="toggleTheme()">
-          ${isDark ? '☀️ Light Mode' : '🌙 Dark Mode'}
-        </button>
+        <div class="settings-row-info"><h4>Dark Mode</h4><p>Switch between light and dark theme.</p></div>
+        <button class="btn ${isDark ? 'btn-primary' : 'btn-secondary'}" onclick="toggleTheme()">${isDark ? '☀️ Light Mode' : '🌙 Dark Mode'}</button>
       </div>
     </div>
     <div class="card">
       <div class="settings-section-title">💾 Backup & Restore</div>
       <div class="settings-row">
-        <div class="settings-row-info"><h4>Export JSON Backup</h4><p>Download a full backup of all your data as a JSON file.</p></div>
+        <div class="settings-row-info"><h4>Export JSON Backup</h4><p>Download a full backup of all your data.</p></div>
         <button class="btn btn-primary" onclick="exportBackup()">⬇️ Export JSON</button>
       </div>
       <div class="settings-row">
-        <div class="settings-row-info"><h4>Export CSV</h4><p>Download all data as a CSV file — open in Excel or any spreadsheet app.</p></div>
+        <div class="settings-row-info"><h4>Export CSV</h4><p>Download all data as a CSV file.</p></div>
         <button class="btn btn-secondary" onclick="exportCSV()">⬇️ Export CSV</button>
       </div>
       <div class="settings-row">
-        <div class="settings-row-info"><h4>Import Backup</h4><p>Restore from a previously exported JSON backup. Existing records will not be overwritten.</p></div>
+        <div class="settings-row-info"><h4>Import Backup</h4><p>Restore from a previously exported JSON backup.</p></div>
         <button class="btn btn-secondary" onclick="triggerImport()">⬆️ Import Backup</button>
       </div>
     </div>
@@ -862,7 +984,7 @@ function renderSettings() {
           <tbody>
             ${state.users.map(u => `<tr>
               <td><strong>${u.username}</strong></td>
-              <td><span class="tag ${u.role === 'admin' ? 'tag-active' : 'tag-op'}">${u.role}</span></td>
+              <td><span class="tag tag-${u.role === 'admin' ? 'active' : 'op'}">${u.role}</span></td>
               <td style="font-size:0.85rem;">${u.last_login ? new Date(u.last_login).toLocaleDateString() : 'Never'}</td>
               <td style="display:flex;gap:4px;">
                 ${u.username !== localStorage.getItem('seedvault_username') ? `
@@ -898,6 +1020,28 @@ function renderSettings() {
         </table>
       </div>
       <button class="btn btn-primary btn-sm" onclick="showAddSpecies()">+ Add Species</button>
+    </div>
+    <div class="card">
+      <div class="settings-section-title">🏪 Seed Sources</div>
+      ${state.sources.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:16px;">No seed sources added yet.</p>' : `
+      <div style="margin-bottom:16px;">
+        <table style="width:100%;">
+          <thead><tr><th>Name</th><th>Type</th><th>Rating</th><th>Website</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${state.sources.map(s => `<tr>
+              <td><strong>${s.name}</strong></td>
+              <td>${s.type || '—'}</td>
+              <td>${s.rating ? '⭐'.repeat(s.rating) : '—'}</td>
+              <td>${s.website ? `<a href="${s.website}" target="_blank" style="color:var(--green-mid);font-size:0.85rem;">Visit</a>` : '—'}</td>
+              <td style="display:flex;gap:4px;">
+                <button class="btn btn-secondary btn-sm" onclick="showEditSource(${s.id})">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteSource(${s.id})">🗑️</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`}
+      <button class="btn btn-primary btn-sm" onclick="showAddSource()">+ Add Source</button>
     </div>
     <div class="card">
       <div class="settings-section-title">ℹ️ About SeedVault</div>
@@ -985,7 +1129,7 @@ async function submitChangePassword() {
 function showAddSpecies() {
   openModal('Add Species', `
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Code * (e.g. HERB)</label><input class="form-control" id="f-scode" placeholder="e.g. HERB" maxlength="10"></div>
+      <div class="form-group"><label class="form-label">Code *</label><input class="form-control" id="f-scode" placeholder="e.g. HERB" maxlength="10"></div>
       <div class="form-group"><label class="form-label">Name *</label><input class="form-control" id="f-sname" placeholder="e.g. Herb"></div>
     </div>
     <div class="form-actions">
@@ -1025,6 +1169,54 @@ async function deleteSpecies(code) {
   await loadAll(); render();
 }
 
+function sourceForm(s) {
+  const types = ['commercial', 'local greenhouse', 'seed swap', 'saved', 'online', 'other'];
+  return `
+    <div class="form-group"><label class="form-label">Source Name *</label><input class="form-control" id="f-sname" value="${s ? s.name : ''}" placeholder="e.g. Burpee, South Harrison Green House"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label>
+        <select class="form-control" id="f-stype">
+          ${types.map(t => `<option value="${t}" ${s && s.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Rating (1-5 ⭐)</label>
+        <select class="form-control" id="f-srating">
+          <option value="">No rating</option>
+          ${[1,2,3,4,5].map(n => `<option value="${n}" ${s && s.rating === n ? 'selected' : ''}>${'⭐'.repeat(n)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Website</label><input class="form-control" id="f-swebsite" value="${s ? s.website || '' : ''}" placeholder="https://..."></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-snotes" rows="2">${s ? s.notes || '' : ''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="${s ? `submitEditSource(${s.id})` : 'submitSource()'}">${s ? 'Save Changes' : 'Add Source'}</button>
+    </div>
+  `;
+}
+
+function showAddSource() { openModal('Add Seed Source', sourceForm(null)); }
+function showEditSource(id) { openModal('Edit Seed Source', sourceForm(state.sources.find(x => x.id === id))); }
+
+async function submitSource() {
+  const name = document.getElementById('f-sname').value.trim();
+  if (!name) return alert('Name is required');
+  await api('/api/sources', 'POST', { name, type: document.getElementById('f-stype').value, rating: document.getElementById('f-srating').value || null, website: document.getElementById('f-swebsite').value, notes: document.getElementById('f-snotes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitEditSource(id) {
+  const name = document.getElementById('f-sname').value.trim();
+  if (!name) return alert('Name is required');
+  await api('/api/sources/' + id, 'PUT', { name, type: document.getElementById('f-stype').value, rating: document.getElementById('f-srating').value || null, website: document.getElementById('f-swebsite').value, notes: document.getElementById('f-snotes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteSource(id) {
+  if (!confirm('Delete this seed source? This cannot be undone.')) return;
+  await api('/api/sources/' + id, 'DELETE'); await loadAll(); render();
+}
+
 async function exportBackup() {
   try {
     const res = await fetch('/api/backup/export', { headers: { 'Authorization': 'Bearer ' + getToken() } });
@@ -1054,19 +1246,17 @@ async function handleImportFile(e) {
   if (!file) return;
   try {
     const backup = JSON.parse(await file.text());
-    if (backup.app !== 'SeedVault') return alert('❌ This does not appear to be a valid SeedVault backup file.');
+    if (backup.app !== 'SeedVault') return alert('❌ Not a valid SeedVault backup file.');
     const preview = await api('/api/backup/preview', 'POST', backup);
     const backupData = backup;
     openModal('Import Backup — Preview', `
-      <div class="alert alert-warn">⚠️ Review what will be imported. Existing records will be skipped.</div>
+      <div class="alert alert-warn">⚠️ Existing records will be skipped.</div>
       <div style="background:var(--green-bg);border-radius:8px;padding:16px;margin-bottom:16px;">
-        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Exported: ${preview.exported_at ? new Date(preview.exported_at).toLocaleString() : 'Unknown'}</div>
         <table style="width:100%;font-size:0.9rem;">
           <tr><td style="padding:4px 0;"><strong>Varieties</strong></td><td>${preview.varieties}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Seed Lots</strong></td><td>${preview.seed_lots}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Plants</strong></td><td>${preview.plants}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Projects</strong></td><td>${preview.breeding_projects}</td></tr>
-          <tr><td style="padding:4px 0;"><strong>Harvest Log</strong></td><td>${preview.harvest_log}</td></tr>
         </table>
       </div>
       <div class="form-actions">

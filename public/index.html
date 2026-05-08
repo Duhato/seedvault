@@ -17,7 +17,7 @@
     <div class="auth-card">
       <div class="auth-brand">
         <span style="font-size:2.5rem;">🌱</span>
-        <h1 style="font-size:1.8rem;font-weight:800;color:var(--green-dark);">SeedVault</h1>
+        <h1 style="font-size:1.8rem;font-weight:800;color:var(--green-mid);">SeedVault</h1>
         <p style="color:var(--text-muted);font-size:0.9rem;">Seed saving and plant breeding tracker</p>
       </div>
       <div id="login-form">
@@ -36,7 +36,7 @@
         <div class="alert alert-info" style="margin-bottom:16px;">Welcome to SeedVault! Create your account to get started.</div>
         <div class="form-group">
           <label class="form-label">Username</label>
-          <input class="form-control" id="setup-username" type="text" value="Duhato" autocomplete="username">
+          <input class="form-control" id="setup-username" type="text" autocomplete="username">
         </div>
         <div class="form-group">
           <label class="form-label">Password</label>
@@ -44,7 +44,7 @@
         </div>
         <div class="form-group">
           <label class="form-label">Confirm Password</label>
-          <input class="form-control" id="setup-confirm" type="password" placeholder="Confirm password" autocomplete="new-password">
+          <input class="form-control" id="setup-confirm" type="password" autocomplete="new-password">
         </div>
         <div id="setup-error" class="alert alert-danger hidden" style="margin-top:12px;"></div>
         <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="submitSetup()">Create Account</button>
@@ -66,6 +66,7 @@
         <button class="nav-btn" data-page="germination">Germination</button>
         <button class="nav-btn" data-page="harvest">Harvest Log</button>
         <button class="nav-btn" data-page="projects">Breeding</button>
+        <button class="nav-btn" data-page="locations">Locations</button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         <span id="nav-username" style="color:rgba(255,255,255,0.6);font-size:0.85rem;"></span>
@@ -83,6 +84,7 @@
       <button class="mobile-nav-btn" data-page="germination">🌱 Germination</button>
       <button class="mobile-nav-btn" data-page="harvest">📋 Harvest Log</button>
       <button class="mobile-nav-btn" data-page="projects">🧬 Breeding</button>
+      <button class="mobile-nav-btn" data-page="locations">📍 Locations</button>
       <button class="mobile-nav-btn" data-page="settings">⚙️ Settings</button>
       <button class="mobile-nav-btn" onclick="logout()">⏏️ Sign Out</button>
     </div>
