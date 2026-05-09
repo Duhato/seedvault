@@ -334,6 +334,7 @@ function showSeedLotDetail(designation) {
         <div><span style="font-size:0.8rem;color:var(--text-muted);">Last Tested</span><div style="font-weight:600;">${lot.last_tested ? new Date(lot.last_tested).toLocaleDateString() : '—'}</div></div>
         ${lot.lot_number ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Lot Number</span><div style="font-weight:600;">${lot.lot_number}</div></div>` : ''}
         ${lot.packed_for_year ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Packed For</span><div style="font-weight:600;">${lot.packed_for_year}</div></div>` : ''}
+        ${lot.sell_by_date ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Sell By</span><div style="font-weight:600;">${lot.sell_by_date}</div></div>` : ''}
         ${lot.upc_code ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">UPC</span><div style="font-weight:600;">${lot.upc_code}</div></div>` : ''}
       </div>
 
@@ -343,9 +344,9 @@ function showSeedLotDetail(designation) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--green-bg);padding:12px;border-radius:8px;">
           ${lot.days_to_germination ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Days to Germinate</span><div style="font-weight:600;">${lot.days_to_germination} days</div></div>` : ''}
           ${lot.days_to_harvest ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Days to Harvest</span><div style="font-weight:600;">${lot.days_to_harvest} days</div></div>` : ''}
-          ${lot.planting_depth_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Planting Depth</span><div style="font-weight:600;">${lot.planting_depth_inches}"</div></div>` : ''}
-          ${lot.spacing_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Spacing</span><div style="font-weight:600;">${lot.spacing_inches}"</div></div>` : ''}
-          ${lot.row_spacing_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Row Spacing</span><div style="font-weight:600;">${lot.row_spacing_inches}"</div></div>` : ''}
+          ${lot.planting_depth_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Planting Depth</span><div style="font-weight:600;">${lot.planting_depth_inches}</div></div>` : ''}
+          ${lot.spacing_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Spacing</span><div style="font-weight:600;">${lot.spacing_inches}</div></div>` : ''}
+          ${lot.row_spacing_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Row Spacing</span><div style="font-weight:600;">${lot.row_spacing_inches}</div></div>` : ''}
           ${lot.sun_requirements ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Sun</span><div style="font-weight:600;">${lot.sun_requirements}</div></div>` : ''}
           ${lot.watering_needs ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Watering</span><div style="font-weight:600;">${lot.watering_needs}</div></div>` : ''}
           ${lot.soil_temp_min_f ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Min Soil Temp</span><div style="font-weight:600;">${lot.soil_temp_min_f}°F</div></div>` : ''}
@@ -613,6 +614,9 @@ function seedLotForm(lot) {
       <div class="form-group"><label class="form-label">Packed For Year</label><input class="form-control" id="f-packedyear" type="number" value="${lot ? lot.packed_for_year || '' : ''}"></div>
     </div>
     <div class="form-group"><label class="form-label">UPC Code</label><input class="form-control" id="f-upc" value="${lot ? lot.upc_code || '' : ''}" placeholder="Barcode number from packet"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Sell By Date</label><input class="form-control" id="f-sellby" value="${lot ? lot.sell_by_date || '' : ''}" placeholder="e.g. 12/26 or 12/2026"></div>
+    </div>
 
     <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">🌱 Quantity</div>
     <div class="form-row">
@@ -649,11 +653,11 @@ function seedLotForm(lot) {
       <div class="form-group"><label class="form-label">Days to Harvest</label><input class="form-control" id="f-dth" type="number" value="${lot ? lot.days_to_harvest || '' : ''}"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Planting Depth (inches)</label><input class="form-control" id="f-depth" type="number" step="0.25" value="${lot ? lot.planting_depth_inches || '' : ''}"></div>
-      <div class="form-group"><label class="form-label">Plant Spacing (inches)</label><input class="form-control" id="f-spacing" type="number" value="${lot ? lot.spacing_inches || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Planting Depth</label><input class="form-control" id="f-depth" placeholder="e.g. 1/4 - 1/2 in" value="${lot ? lot.planting_depth_inches || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Plant Spacing</label><input class="form-control" id="f-spacing" placeholder="e.g. 15 in / 3 in" value="${lot ? lot.spacing_inches || '' : ''}"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Row Spacing (inches)</label><input class="form-control" id="f-rowspacing" type="number" value="${lot ? lot.row_spacing_inches || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Row Spacing</label><input class="form-control" id="f-rowspacing" placeholder="e.g. 12 in" value="${lot ? lot.row_spacing_inches || '' : ''}"></div>
       <div class="form-group"><label class="form-label">Min Soil Temp (°F)</label><input class="form-control" id="f-soiltemp" type="number" value="${lot ? lot.soil_temp_min_f || '' : ''}"></div>
     </div>
     <div class="form-row">
@@ -727,6 +731,7 @@ function getSeedLotFormData(lot) {
     lot_number: document.getElementById('f-lotnum').value,
     upc_code: document.getElementById('f-upc').value,
     packed_for_year: document.getElementById('f-packedyear').value || null,
+    sell_by_date: document.getElementById('f-sellby').value || null,
     days_to_germination: document.getElementById('f-dtg').value || null,
     days_to_harvest: document.getElementById('f-dth').value || null,
     planting_depth_inches: document.getElementById('f-depth').value || null,
