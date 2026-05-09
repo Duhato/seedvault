@@ -834,6 +834,7 @@ function renderPlants() {
             <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
             <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
             <button class="btn btn-secondary btn-sm" onclick="showPlantPhotoUpload('${p.designation}')">📷</button>
+            <button class="btn btn-secondary btn-sm" onclick="showPlantQR('${p.designation}')">⬛ QR</button>
             <button class="btn btn-primary btn-sm" onclick="showAddAmendment('${p.designation}')">🌿 Amend</button>
             <button class="btn btn-danger btn-sm" onclick="deletePlant('${p.designation}')">🗑️</button>
           </td>
@@ -1090,6 +1091,76 @@ async function submitEditAmendment(id) {
 async function deleteAmendment(id) {
   if (!confirm('Delete this amendment record? This cannot be undone.')) return;
   await api('/api/amendments/' + id, 'DELETE'); await loadAll(); render();
+}
+
+function showPlantQR(designation) {
+  const p = state.plants.find(x => x.designation === designation);
+  const lot = state.seedLots.find(l => l.designation === p.seed_lot_designation);
+  openModal('QR Code — ' + designation, `
+    <div style="text-align:center;padding:16px;">
+      <div id="qr-container" style="display:inline-block;padding:16px;background:white;border-radius:8px;margin-bottom:16px;"></div>
+      <div style="font-family:monospace;font-size:0.85rem;margin-bottom:4px;">${designation}</div>
+      <div style="font-size:0.85rem;color:var(--text-muted);">${p.variety_name || ''} · ${p.season_year}</div>
+      ${lot && lot.storage_location ? `<div style="font-size:0.8rem;color:var(--text-muted);">${lot.storage_location}</div>` : ''}
+    </div>
+    <div class="alert alert-info">Print this QR code and attach it to your plant stake. Scan next season to pull up this plant instantly.</div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" onclick="printQR('${designation}')">🖨️ Print</button>
+    </div>
+  `);
+  setTimeout(() => {
+    const container = document.getElementById('qr-container');
+    if (container && typeof QRCode !== 'undefined') {
+      new QRCode(container, {
+        text: designation,
+        width: 200,
+        height: 200,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H
+      });
+    }
+  }, 100);
+}
+
+function printQR(designation) {
+  const p = state.plants.find(x => x.designation === designation);
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>QR — ${designation}</title>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+      <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        .label { border: 2px solid #000; display: inline-block; padding: 12px; border-radius: 8px; }
+        .designation { font-family: monospace; font-size: 14px; font-weight: bold; margin-top: 8px; }
+        .variety { font-size: 12px; color: #555; }
+      </style>
+    </head>
+    <body>
+      <div class="label">
+        <div id="qr"></div>
+        <div class="designation">${designation}</div>
+        <div class="variety">${p.variety_name || ''} · ${p.season_year}</div>
+      </div>
+      <script>
+        new QRCode(document.getElementById('qr'), {
+          text: '${designation}',
+          width: 150,
+          height: 150,
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+        setTimeout(() => window.print(), 500);
+      </script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
 }
 
 function renderHarvest() {

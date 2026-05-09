@@ -59,17 +59,17 @@
         <span class="nav-title">SeedVault</span>
       </div>
       <div class="nav-links">
-        <button class="nav-btn active" data-page="dashboard">Dashboard</button>
-        <button class="nav-btn" data-page="varieties">Varieties</button>
-        <button class="nav-btn" data-page="seedlots">Seed Lots</button>
-        <button class="nav-btn" data-page="plants">Plants</button>
-        <button class="nav-btn" data-page="germination">Germination</button>
-        <button class="nav-btn" data-page="harvest">Harvest Log</button>
-        <button class="nav-btn" data-page="projects">Breeding</button>
-        <button class="nav-btn" data-page="crosses">Crosses</button>
-        <button class="nav-btn" data-page="observations">Observations</button>
-        <button class="nav-btn" data-page="amendments">Amendments</button>
-        <button class="nav-btn" data-page="locations">Locations</button>
+        <button class="nav-btn active" data-page="dashboard" data-tooltip="Overview of your seed vault">Dashboard</button>
+        <button class="nav-btn" data-page="varieties" data-tooltip="Manage plant varieties">Varieties</button>
+        <button class="nav-btn" data-page="seedlots" data-tooltip="Track individual seed packets and saved seed batches">Seed Lots</button>
+        <button class="nav-btn" data-page="plants" data-tooltip="Log plants growing this season">Plants</button>
+        <button class="nav-btn" data-page="germination" data-tooltip="Track germination tests from planting to thinning">Germination</button>
+        <button class="nav-btn" data-page="harvest" data-tooltip="Log harvested fruit and seed counts">Harvest Log</button>
+        <button class="nav-btn" data-page="projects" data-tooltip="Track plant breeding projects and goals">Breeding</button>
+        <button class="nav-btn" data-page="crosses" data-tooltip="Log hand pollination attempts between plants">Crosses</button>
+        <button class="nav-btn" data-page="observations" data-tooltip="Record mid-season fruit notes separate from harvest">Observations</button>
+        <button class="nav-btn" data-page="amendments" data-tooltip="Track fertilizer and soil amendment applications">Amendments</button>
+        <button class="nav-btn" data-page="locations" data-tooltip="Manage garden beds, grow bags and containers">Locations</button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         <span id="nav-username" style="color:rgba(255,255,255,0.6);font-size:0.85rem;"></span>
@@ -110,6 +110,7 @@
 
   <input type="file" id="import-file-input" accept=".json" style="display:none">
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="/app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
