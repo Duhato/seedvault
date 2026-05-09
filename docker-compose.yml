@@ -22,7 +22,7 @@ services:
     env_file:
       - /mnt/ssd-apps/seedvault/app/.env
     volumes:
-      - /mnt/ssd-apps/seedvault/app:/app/data
+      - /mnt/ssd-apps/seedvault/uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy

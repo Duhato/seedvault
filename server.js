@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const https = require('https');
 const http = require('http');
 const fs = require('fs');
+const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +31,34 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/', apiLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/setup', authLimiter);
+app.use('/uploads', express.static('/app/uploads'));
+
+const plantStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, '/app/uploads/plants'),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, req.params.designation.replace(/[^a-zA-Z0-9-_]/g, '_') + '_' + Date.now() + ext);
+  }
+});
+
+const packetStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, '/app/uploads/packets'),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const side = req.params.side || 'front';
+    cb(null, req.params.designation.replace(/[^a-zA-Z0-9-_]/g, '_') + '_' + side + '_' + Date.now() + ext);
+  }
+});
+
+const imageFilter = (req, file, cb) => {
+  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.heic'];
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowed.includes(ext)) cb(null, true);
+  else cb(new Error('Only image files are allowed'), false);
+};
+
+const uploadPlant = multer({ storage: plantStorage, fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+const uploadPacket = multer({ storage: packetStorage, fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
 function sanitizeString(str, maxLen = 255) {
   if (str === null || str === undefined) return null;
@@ -97,6 +126,8 @@ async function initDB() {
         storage_location VARCHAR(100),
         germination_rate INTEGER,
         last_tested DATE,
+        packet_front_path VARCHAR(255),
+        packet_back_path VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS garden_locations (
@@ -118,6 +149,7 @@ async function initDB() {
         season_type VARCHAR(10) DEFAULT 'summer',
         location_id INTEGER REFERENCES garden_locations(id),
         selected_for_seed BOOLEAN DEFAULT FALSE,
+        photo_path VARCHAR(255),
         notes TEXT,
         traits JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT NOW()
@@ -200,6 +232,9 @@ async function initDB() {
       ON CONFLICT (code) DO NOTHING;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'standard';
       ALTER TABLE plants ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES garden_locations(id);
+      ALTER TABLE plants ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS packet_front_path VARCHAR(255);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS packet_back_path VARCHAR(255);
     `);
     console.log('Database initialized successfully');
   } finally { client.release(); }
@@ -302,57 +337,77 @@ app.put('/api/users/:username/role', authMiddleware, adminMiddleware, async (req
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// PHOTO UPLOAD ROUTES
+app.post('/api/plants/:designation/photo', authMiddleware, (req, res) => {
+  uploadPlant.single('photo')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const designation = sanitizeString(req.params.designation, 50);
+    const photoPath = '/uploads/plants/' + req.file.filename;
+    try {
+      const old = await pool.query('SELECT photo_path FROM plants WHERE designation=$1', [designation]);
+      if (old.rows[0]?.photo_path) {
+        const oldFile = '/app' + old.rows[0].photo_path;
+        if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
+      }
+      await pool.query('UPDATE plants SET photo_path=$1 WHERE designation=$2', [photoPath, designation]);
+      res.json({ success: true, photo_path: photoPath });
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+  });
+});
+
+app.delete('/api/plants/:designation/photo', authMiddleware, async (req, res) => {
+  const designation = sanitizeString(req.params.designation, 50);
+  try {
+    const result = await pool.query('SELECT photo_path FROM plants WHERE designation=$1', [designation]);
+    const photoPath = result.rows[0]?.photo_path;
+    if (photoPath) {
+      const fullPath = '/app' + photoPath;
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
+    await pool.query('UPDATE plants SET photo_path=NULL WHERE designation=$1', [designation]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/seed-lots/:designation/packet/:side', authMiddleware, (req, res) => {
+  uploadPacket.single('photo')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const designation = sanitizeString(req.params.designation, 50);
+    const side = req.params.side === 'back' ? 'back' : 'front';
+    const col = side === 'front' ? 'packet_front_path' : 'packet_back_path';
+    const photoPath = '/uploads/packets/' + req.file.filename;
+    try {
+      const old = await pool.query('SELECT ' + col + ' FROM seed_lots WHERE designation=$1', [designation]);
+      if (old.rows[0]?.[col]) {
+        const oldFile = '/app' + old.rows[0][col];
+        if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
+      }
+      await pool.query('UPDATE seed_lots SET ' + col + '=$1 WHERE designation=$2', [photoPath, designation]);
+      res.json({ success: true, photo_path: photoPath });
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+  });
+});
+
+app.delete('/api/seed-lots/:designation/packet/:side', authMiddleware, async (req, res) => {
+  const designation = sanitizeString(req.params.designation, 50);
+  const side = req.params.side === 'back' ? 'back' : 'front';
+  const col = side === 'front' ? 'packet_front_path' : 'packet_back_path';
+  try {
+    const result = await pool.query('SELECT ' + col + ' FROM seed_lots WHERE designation=$1', [designation]);
+    const photoPath = result.rows[0]?.[col];
+    if (photoPath) {
+      const fullPath = '/app' + photoPath;
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
+    await pool.query('UPDATE seed_lots SET ' + col + '=NULL WHERE designation=$1', [designation]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 app.use(express.static(path.join(__dirname, 'public')));
-
-// CROSS POLLINATION
-app.get('/api/crosses', authMiddleware, async (req, res) => {
-  try { res.json((await pool.query('SELECT c.*, mp.seed_lot_designation as mother_lot, fp.seed_lot_designation as father_lot FROM cross_pollinations c LEFT JOIN plants mp ON c.mother_designation = mp.designation LEFT JOIN plants fp ON c.father_designation = fp.designation ORDER BY c.date_pollinated DESC')).rows); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-app.post('/api/crosses', authMiddleware, async (req, res) => {
-  const mother_designation = sanitizeString(req.body.mother_designation, 50);
-  if (!mother_designation) return res.status(400).json({ error: 'Mother plant required' });
-  try { res.json((await pool.query('INSERT INTO cross_pollinations (mother_designation, father_designation, project_code, date_bagged, date_pollinated, date_unbagged, notes) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [mother_designation, sanitizeString(req.body.father_designation, 50) || null, sanitizeString(req.body.project_code, 20) || null, sanitizeString(req.body.date_bagged, 20) || null, sanitizeString(req.body.date_pollinated, 20) || null, sanitizeString(req.body.date_unbagged, 20) || null, sanitizeString(req.body.notes, 2000)])).rows[0]); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-app.put('/api/crosses/:id', authMiddleware, async (req, res) => {
-  const id = validateInt(req.params.id, 1);
-  if (!id) return res.status(400).json({ error: 'Invalid id' });
-  try { res.json((await pool.query('UPDATE cross_pollinations SET date_bagged=$1, date_pollinated=$2, date_unbagged=$3, success=$4, fruit_set=$5, notes=$6 WHERE id=$7 RETURNING *', [sanitizeString(req.body.date_bagged, 20) || null, sanitizeString(req.body.date_pollinated, 20) || null, sanitizeString(req.body.date_unbagged, 20) || null, req.body.success === true || req.body.success === 'true' ? true : req.body.success === false || req.body.success === 'false' ? false : null, req.body.fruit_set === true || req.body.fruit_set === 'true', sanitizeString(req.body.notes, 2000), id])).rows[0]); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-app.delete('/api/crosses/:id', authMiddleware, async (req, res) => {
-  const id = validateInt(req.params.id, 1);
-  if (!id) return res.status(400).json({ error: 'Invalid id' });
-  try { await pool.query('DELETE FROM cross_pollinations WHERE id=$1', [id]); res.json({ success: true }); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-
-// FRUIT OBSERVATIONS
-app.get('/api/observations', authMiddleware, async (req, res) => {
-  try { res.json((await pool.query('SELECT fo.*, v.name as variety_name FROM fruit_observations fo LEFT JOIN plants p ON fo.plant_designation = p.designation LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY fo.observation_date DESC')).rows); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-app.post('/api/observations', authMiddleware, async (req, res) => {
-  const plant_designation = sanitizeString(req.body.plant_designation, 50);
-  const observation_date = sanitizeString(req.body.observation_date, 20);
-  if (!plant_designation || !observation_date) return res.status(400).json({ error: 'Plant and date required' });
-  try { res.json((await pool.query('INSERT INTO fruit_observations (plant_designation, observation_date, fruit_count, avg_length_inches, avg_diameter_inches, color, texture, flavor_notes, health_notes, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *', [plant_designation, observation_date, validateInt(req.body.fruit_count, 0, 10000), validateDecimal(req.body.avg_length_inches), validateDecimal(req.body.avg_diameter_inches), sanitizeString(req.body.color, 50), sanitizeString(req.body.texture, 50), sanitizeString(req.body.flavor_notes, 1000), sanitizeString(req.body.health_notes, 1000), sanitizeString(req.body.notes, 2000)])).rows[0]); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-app.put('/api/observations/:id', authMiddleware, async (req, res) => {
-  const id = validateInt(req.params.id, 1);
-  if (!id) return res.status(400).json({ error: 'Invalid id' });
-  try { res.json((await pool.query('UPDATE fruit_observations SET observation_date=$1, fruit_count=$2, avg_length_inches=$3, avg_diameter_inches=$4, color=$5, texture=$6, flavor_notes=$7, health_notes=$8, notes=$9 WHERE id=$10 RETURNING *', [sanitizeString(req.body.observation_date, 20), validateInt(req.body.fruit_count, 0, 10000), validateDecimal(req.body.avg_length_inches), validateDecimal(req.body.avg_diameter_inches), sanitizeString(req.body.color, 50), sanitizeString(req.body.texture, 50), sanitizeString(req.body.flavor_notes, 1000), sanitizeString(req.body.health_notes, 1000), sanitizeString(req.body.notes, 2000), id])).rows[0]); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-app.delete('/api/observations/:id', authMiddleware, async (req, res) => {
-  const id = validateInt(req.params.id, 1);
-  if (!id) return res.status(400).json({ error: 'Invalid id' });
-  try { await pool.query('DELETE FROM fruit_observations WHERE id=$1', [id]); res.json({ success: true }); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
 
 // GARDEN LOCATIONS
 app.get('/api/locations', authMiddleware, async (req, res) => {
@@ -613,6 +668,55 @@ app.delete('/api/germination/:id', authMiddleware, async (req, res) => {
   const id = validateInt(req.params.id, 1);
   if (!id) return res.status(400).json({ error: 'Invalid id' });
   try { await pool.query('DELETE FROM germination_tests WHERE id=$1', [id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// CROSS POLLINATION
+app.get('/api/crosses', authMiddleware, async (req, res) => {
+  try { res.json((await pool.query('SELECT c.*, mp.seed_lot_designation as mother_lot, fp.seed_lot_designation as father_lot FROM cross_pollinations c LEFT JOIN plants mp ON c.mother_designation = mp.designation LEFT JOIN plants fp ON c.father_designation = fp.designation ORDER BY c.date_pollinated DESC')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.post('/api/crosses', authMiddleware, async (req, res) => {
+  const mother_designation = sanitizeString(req.body.mother_designation, 50);
+  if (!mother_designation) return res.status(400).json({ error: 'Mother plant required' });
+  try { res.json((await pool.query('INSERT INTO cross_pollinations (mother_designation, father_designation, project_code, date_bagged, date_pollinated, date_unbagged, notes) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [mother_designation, sanitizeString(req.body.father_designation, 50) || null, sanitizeString(req.body.project_code, 20) || null, sanitizeString(req.body.date_bagged, 20) || null, sanitizeString(req.body.date_pollinated, 20) || null, sanitizeString(req.body.date_unbagged, 20) || null, sanitizeString(req.body.notes, 2000)])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.put('/api/crosses/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { res.json((await pool.query('UPDATE cross_pollinations SET date_bagged=$1, date_pollinated=$2, date_unbagged=$3, success=$4, fruit_set=$5, notes=$6 WHERE id=$7 RETURNING *', [sanitizeString(req.body.date_bagged, 20) || null, sanitizeString(req.body.date_pollinated, 20) || null, sanitizeString(req.body.date_unbagged, 20) || null, req.body.success === true || req.body.success === 'true' ? true : req.body.success === false || req.body.success === 'false' ? false : null, req.body.fruit_set === true || req.body.fruit_set === 'true', sanitizeString(req.body.notes, 2000), id])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.delete('/api/crosses/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { await pool.query('DELETE FROM cross_pollinations WHERE id=$1', [id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// FRUIT OBSERVATIONS
+app.get('/api/observations', authMiddleware, async (req, res) => {
+  try { res.json((await pool.query('SELECT fo.*, v.name as variety_name FROM fruit_observations fo LEFT JOIN plants p ON fo.plant_designation = p.designation LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY fo.observation_date DESC')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.post('/api/observations', authMiddleware, async (req, res) => {
+  const plant_designation = sanitizeString(req.body.plant_designation, 50);
+  const observation_date = sanitizeString(req.body.observation_date, 20);
+  if (!plant_designation || !observation_date) return res.status(400).json({ error: 'Plant and date required' });
+  try { res.json((await pool.query('INSERT INTO fruit_observations (plant_designation, observation_date, fruit_count, avg_length_inches, avg_diameter_inches, color, texture, flavor_notes, health_notes, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *', [plant_designation, observation_date, validateInt(req.body.fruit_count, 0, 10000), validateDecimal(req.body.avg_length_inches), validateDecimal(req.body.avg_diameter_inches), sanitizeString(req.body.color, 50), sanitizeString(req.body.texture, 50), sanitizeString(req.body.flavor_notes, 1000), sanitizeString(req.body.health_notes, 1000), sanitizeString(req.body.notes, 2000)])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.put('/api/observations/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { res.json((await pool.query('UPDATE fruit_observations SET observation_date=$1, fruit_count=$2, avg_length_inches=$3, avg_diameter_inches=$4, color=$5, texture=$6, flavor_notes=$7, health_notes=$8, notes=$9 WHERE id=$10 RETURNING *', [sanitizeString(req.body.observation_date, 20), validateInt(req.body.fruit_count, 0, 10000), validateDecimal(req.body.avg_length_inches), validateDecimal(req.body.avg_diameter_inches), sanitizeString(req.body.color, 50), sanitizeString(req.body.texture, 50), sanitizeString(req.body.flavor_notes, 1000), sanitizeString(req.body.health_notes, 1000), sanitizeString(req.body.notes, 2000), id])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.delete('/api/observations/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { await pool.query('DELETE FROM fruit_observations WHERE id=$1', [id]); res.json({ success: true }); }
   catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 

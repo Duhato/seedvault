@@ -108,6 +108,17 @@ async function api(path, method = 'GET', body = null) {
   return res.json();
 }
 
+async function uploadPhoto(url, file) {
+  const formData = new FormData();
+  formData.append('photo', file);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + getToken() },
+    body: formData
+  });
+  return res.json();
+}
+
 async function loadAll() {
   const calls = [
     api('/api/varieties'), api('/api/seed-lots'), api('/api/plants'), api('/api/projects'),
@@ -354,13 +365,14 @@ function renderSeedLots() {
     <div class="card">
       ${state.seedLots.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>No seed lots yet.</p></div>`
       : `<div class="table-wrap"><table>
-        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Qty</th><th>Storage</th><th>Germination</th><th>Viability</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Qty</th><th>Storage</th><th>Germination</th><th>Packet</th><th>Viability</th><th>Actions</th></tr></thead>
         <tbody>${state.seedLots.map(lot => {
           const maxYears = viabilityYears[lot.species_code] || 3;
           const yearsLeft = maxYears - (currentYear - lot.year_saved);
           let viabilityBadge = '<span style="color:#22c55e;font-weight:600;">🟢 Good</span>';
           if (yearsLeft <= 0) viabilityBadge = '<span style="color:#ef4444;font-weight:600;">🔴 Expired</span>';
           else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#f59e0b;font-weight:600;">🟡 Expiring</span>';
+          const hasPhotos = lot.packet_front_path || lot.packet_back_path;
           return `<tr>
             <td><span class="designation">${lot.designation}</span></td>
             <td>${lot.variety_name || lot.variety_code}</td>
@@ -369,10 +381,12 @@ function renderSeedLots() {
             <td>${lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—'}</td>
             <td>${lot.storage_location || '—'}</td>
             <td>${lot.germination_rate ? lot.germination_rate + '%' : '—'}</td>
+            <td>${hasPhotos ? '<span style="color:#22c55e;">📷 Photos</span>' : '<span style="color:var(--text-muted);font-size:0.8rem;">No photos</span>'}</td>
             <td>${viabilityBadge}</td>
             <td style="display:flex;gap:4px;flex-wrap:wrap;">
               <button class="btn btn-secondary btn-sm" onclick="showAddPlants('${lot.designation}')">+ Plants</button>
               <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
+              <button class="btn btn-brown btn-sm" onclick="showPacketPhotos('${lot.designation}')">📷</button>
               <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
             </td>
           </tr>`;
@@ -380,6 +394,54 @@ function renderSeedLots() {
       </table></div>`}
     </div>
   `;
+}
+
+function showPacketPhotos(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  openModal('Seed Packet Photos — ' + designation, `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;">Front of Packet</div>
+        ${lot.packet_front_path ? `
+          <img src="${lot.packet_front_path}" style="width:100%;border-radius:8px;margin-bottom:8px;border:2px solid var(--border);">
+          <button class="btn btn-danger btn-sm" onclick="deletePacketPhoto('${designation}', 'front')">🗑️ Remove</button>
+        ` : '<div style="background:var(--green-bg);border-radius:8px;padding:20px;text-align:center;color:var(--text-muted);margin-bottom:8px;">No photo</div>'}
+        <div style="margin-top:8px;">
+          <input type="file" id="front-upload" accept="image/*" style="display:none" onchange="uploadPacketPhoto('${designation}', 'front')">
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('front-upload').click()">📷 ${lot.packet_front_path ? 'Replace' : 'Upload'} Front</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;">Back of Packet</div>
+        ${lot.packet_back_path ? `
+          <img src="${lot.packet_back_path}" style="width:100%;border-radius:8px;margin-bottom:8px;border:2px solid var(--border);">
+          <button class="btn btn-danger btn-sm" onclick="deletePacketPhoto('${designation}', 'back')">🗑️ Remove</button>
+        ` : '<div style="background:var(--green-bg);border-radius:8px;padding:20px;text-align:center;color:var(--text-muted);margin-bottom:8px;">No photo</div>'}
+        <div style="margin-top:8px;">
+          <input type="file" id="back-upload" accept="image/*" style="display:none" onchange="uploadPacketPhoto('${designation}', 'back')">
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('back-upload').click()">📷 ${lot.packet_back_path ? 'Replace' : 'Upload'} Back</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>
+  `);
+}
+
+async function uploadPacketPhoto(designation, side) {
+  const input = document.getElementById(side + '-upload');
+  const file = input.files[0];
+  if (!file) return;
+  const result = await uploadPhoto('/api/seed-lots/' + designation + '/packet/' + side, file);
+  if (result.error) return alert('Upload failed: ' + result.error);
+  await loadAll();
+  showPacketPhotos(designation);
+}
+
+async function deletePacketPhoto(designation, side) {
+  if (!confirm('Remove this photo?')) return;
+  await api('/api/seed-lots/' + designation + '/packet/' + side, 'DELETE');
+  await loadAll();
+  showPacketPhotos(designation);
 }
 
 function showAddSeedLot() { openModal('Add Seed Lot', seedLotForm(null)); }
@@ -445,17 +507,18 @@ function renderPlants() {
     <div class="card">
       ${thisYear.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🪴</div><p>No plants logged this season yet.</p></div>`
       : `<div class="table-wrap"><table>
-        <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Season</th><th>Seed Save</th><th>Notes</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Photo</th><th>Season</th><th>Seed Save</th><th>Actions</th></tr></thead>
         <tbody>${thisYear.map(p => `<tr>
           <td><span class="designation">${p.designation}</span></td>
           <td>${p.variety_name || '—'}</td>
           <td>${p.location_name ? '<span style="font-size:0.85rem;">📍 ' + p.location_name + '</span>' : '—'}</td>
+          <td>${p.photo_path ? `<img src="${p.photo_path}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="showPlantPhoto('${p.designation}')">` : '<span style="color:var(--text-muted);font-size:0.8rem;">—</span>'}</td>
           <td>${p.season_type}</td>
           <td>${p.selected_for_seed ? '<span class="seed-star">⭐ Selected</span>' : '—'}</td>
-          <td style="max-width:150px;font-size:0.85rem;">${p.notes || '—'}</td>
           <td style="display:flex;gap:4px;flex-wrap:wrap;">
             <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
             <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
+            <button class="btn btn-secondary btn-sm" onclick="showPlantPhotoUpload('${p.designation}')">📷</button>
             <button class="btn btn-danger btn-sm" onclick="deletePlant('${p.designation}')">🗑️</button>
           </td>
         </tr>`).join('')}</tbody>
@@ -479,6 +542,51 @@ function renderPlants() {
       </table></div>
     </div>` : ''}
   `;
+}
+
+function showPlantPhoto(designation) {
+  const p = state.plants.find(x => x.designation === designation);
+  openModal('Photo — ' + designation, `
+    <img src="${p.photo_path}" style="width:100%;border-radius:8px;margin-bottom:16px;">
+    <div class="form-actions">
+      <button class="btn btn-danger" onclick="deletePlantPhoto('${designation}')">🗑️ Remove Photo</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  `);
+}
+
+function showPlantPhotoUpload(designation) {
+  const p = state.plants.find(x => x.designation === designation);
+  openModal('Plant Photo — ' + designation, `
+    ${p.photo_path ? `
+      <img src="${p.photo_path}" style="width:100%;border-radius:8px;margin-bottom:16px;border:2px solid var(--border);">
+      <button class="btn btn-danger btn-sm" style="margin-bottom:16px;" onclick="deletePlantPhoto('${designation}')">🗑️ Remove Photo</button>
+    ` : '<div style="background:var(--green-bg);border-radius:8px;padding:30px;text-align:center;color:var(--text-muted);margin-bottom:16px;">No photo yet</div>'}
+    <div class="form-group">
+      <label class="form-label">Upload Plant Photo</label>
+      <input type="file" id="plant-photo-upload" accept="image/*" class="form-control">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitPlantPhoto('${designation}')">📷 Upload Photo</button>
+    </div>
+  `);
+}
+
+async function submitPlantPhoto(designation) {
+  const input = document.getElementById('plant-photo-upload');
+  const file = input.files[0];
+  if (!file) return alert('Please select a photo');
+  const result = await uploadPhoto('/api/plants/' + designation + '/photo', file);
+  if (result.error) return alert('Upload failed: ' + result.error);
+  await loadAll(); closeModal(); render();
+  alert('✅ Photo uploaded successfully!');
+}
+
+async function deletePlantPhoto(designation) {
+  if (!confirm('Remove this photo?')) return;
+  await api('/api/plants/' + designation + '/photo', 'DELETE');
+  await loadAll(); closeModal(); render();
 }
 
 function showAddPlants(preselectedLot = '') {
@@ -698,7 +806,7 @@ async function deleteCross(id) {
 function renderObservations() {
   return `
     <div class="page-header"><h1 class="page-title">🔍 Fruit Observations</h1><button class="btn btn-primary" onclick="showAddObservation()">+ Add Observation</button></div>
-    ${state.observations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>No fruit observations yet. Log mid-season notes here separate from the harvest log.</p></div></div>`
+    ${state.observations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>No fruit observations yet.</p></div></div>`
     : state.observations.map(o => `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
@@ -740,15 +848,15 @@ function observationForm(o) {
     <div class="form-group"><label class="form-label">Observation Date *</label><input class="form-control" id="f-obsdate" type="date" value="${o && o.observation_date ? o.observation_date.split('T')[0] : new Date().toISOString().split('T')[0]}"></div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Fruit Count</label><input class="form-control" id="f-count" type="number" min="0" value="${o ? o.fruit_count || '' : ''}"></div>
-      <div class="form-group"><label class="form-label">Color</label><input class="form-control" id="f-color" value="${o ? o.color || '' : ''}" placeholder="e.g. Dark green, turning yellow"></div>
+      <div class="form-group"><label class="form-label">Color</label><input class="form-control" id="f-color" value="${o ? o.color || '' : ''}" placeholder="e.g. Dark green"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Avg Length (inches)</label><input class="form-control" id="f-length" type="number" step="0.1" value="${o ? o.avg_length_inches || '' : ''}"></div>
       <div class="form-group"><label class="form-label">Avg Diameter (inches)</label><input class="form-control" id="f-diameter" type="number" step="0.1" value="${o ? o.avg_diameter_inches || '' : ''}"></div>
     </div>
     <div class="form-group"><label class="form-label">Texture Notes</label><input class="form-control" id="f-texture" value="${o ? o.texture || '' : ''}" placeholder="e.g. Firm, bumpy, smooth"></div>
-    <div class="form-group"><label class="form-label">Flavor Notes</label><textarea class="form-control" id="f-flavor" rows="2" placeholder="Taste observations if sampled...">${o ? o.flavor_notes || '' : ''}</textarea></div>
-    <div class="form-group"><label class="form-label">Health / Disease Notes</label><textarea class="form-control" id="f-health" rows="2" placeholder="Any pest damage, disease signs, issues...">${o ? o.health_notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Flavor Notes</label><textarea class="form-control" id="f-flavor" rows="2">${o ? o.flavor_notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Health / Disease Notes</label><textarea class="form-control" id="f-health" rows="2">${o ? o.health_notes || '' : ''}</textarea></div>
     <div class="form-group"><label class="form-label">General Notes</label><textarea class="form-control" id="f-notes" rows="2">${o ? o.notes || '' : ''}</textarea></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -947,7 +1055,7 @@ function showThinningLog(id) {
       <div class="form-group"><label class="form-label">Date Thinned</label><input class="form-control" id="f-datethinned" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
     </div>
     <div class="form-group"><label class="form-label">Plants Remaining *</label><input class="form-control" id="f-remaining" type="number" min="0"></div>
-    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2" placeholder="Kept strongest seedling from each pot..."></textarea></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2"></textarea></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitThinning(${id})">Log Thinning</button>
@@ -1404,7 +1512,7 @@ async function deleteSpecies(code) {
 function sourceForm(s) {
   const types = ['commercial', 'local greenhouse', 'seed swap', 'saved', 'online', 'other'];
   return `
-    <div class="form-group"><label class="form-label">Source Name *</label><input class="form-control" id="f-sname" value="${s ? s.name : ''}" placeholder="e.g. Burpee, South Harrison Green House"></div>
+    <div class="form-group"><label class="form-label">Source Name *</label><input class="form-control" id="f-sname" value="${s ? s.name : ''}" placeholder="e.g. Burpee"></div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Type</label>
         <select class="form-control" id="f-stype">
