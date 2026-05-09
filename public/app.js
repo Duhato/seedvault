@@ -354,6 +354,8 @@ function showSeedLotDetail(designation) {
           ${lot.frost_tolerance ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Frost Tolerance</span><div style="font-weight:600;">${lot.frost_tolerance}</div></div>` : ''}
           <div><span style="font-size:0.8rem;color:var(--text-muted);">Direct Sow</span><div style="font-weight:600;">${lot.direct_sow ? 'Yes' : 'No — start indoors'}</div></div>
           ${lot.container_variety ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Container Variety</span><div style="font-weight:600;">✅ Yes</div></div>` : ''}
+          ${lot.container_size ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Container Size</span><div style="font-weight:600;">${lot.container_size}</div></div>` : ''}
+          ${lot.origin ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Origin</span><div style="font-weight:600;">${lot.origin}</div></div>` : ''}
         </div>
       </div>` : ''}
 
@@ -466,9 +468,10 @@ function varietyForm(v) {
     <div class="form-row">
       <div class="form-group"><label class="form-label">Type</label>
         <select class="form-control" id="f-type">
-          <option value="OP" ${v && v.type === 'OP' ? 'selected' : ''}>Open Pollinated</option>
-          <option value="Heirloom" ${v && v.type === 'Heirloom' ? 'selected' : ''}>Heirloom</option>
-          <option value="Hybrid" ${v && v.type === 'Hybrid' ? 'selected' : ''}>Hybrid</option>
+          <option value="OP" ${v && v.type === 'OP' ? 'selected' : ''}>Open Pollinated (OP)</option>
+          <option value="Heirloom" ${v && v.type === 'Heirloom' ? 'selected' : ''}>Heirloom (open pollinated 50+ years)</option>
+          <option value="Hybrid" ${v && v.type === 'Hybrid' ? 'selected' : ''}>Hybrid (F1)</option>
+          <option value="AOP" ${v && v.type === 'AOP' ? 'selected' : ''}>Hybrid OP (stabilizing)</option>
         </select>
       </div>
       <div class="form-group"><label class="form-label">Year Acquired</label><input class="form-control" id="f-year" type="number" value="${v ? v.year_acquired || '' : ''}"></div>
@@ -596,6 +599,7 @@ function seedLotForm(lot) {
   const frostOptions = ['Hardy — survives hard frost', 'Semi-hardy — light frost ok', 'Tender — no frost'];
   return `
     ${!lot ? '<div class="alert alert-info">Designation is auto-generated from variety + generation + year.</div>' : ''}
+    ${!lot ? '<div id="seedlot-form-error" class="alert alert-danger hidden"></div>' : ''}
     ${!lot ? `
     <div class="form-group"><label class="form-label">Variety *</label>
       <select class="form-control" id="f-variety">
@@ -604,8 +608,14 @@ function seedLotForm(lot) {
       </select>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Generation *</label><input class="form-control" id="f-gen" type="number" min="0" value="0"></div>
+      <div class="form-group"><label class="form-label">Generation * (0=commercial, 1=first saved)</label><input class="form-control" id="f-gen" type="number" min="0" value="0"></div>
       <div class="form-group"><label class="form-label">Year Saved/Bought *</label><input class="form-control" id="f-yearsaved" type="number" value="${new Date().getFullYear()}"></div>
+    </div>` : ''}
+
+    ${lot ? `<div class="alert alert-info" style="margin-bottom:8px;">Changing generation or year will update the designation.</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Generation</label><input class="form-control" id="f-editgen" type="number" min="0" value="${lot.generation}"></div>
+      <div class="form-group"><label class="form-label">Year</label><input class="form-control" id="f-edityear" type="number" value="${lot.year_saved}"></div>
     </div>` : ''}
 
     <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">📦 Packet Info</div>
@@ -649,8 +659,8 @@ function seedLotForm(lot) {
 
     <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">🌱 Growing Information</div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Days to Germination</label><input class="form-control" id="f-dtg" type="number" value="${lot ? lot.days_to_germination || '' : ''}"></div>
-      <div class="form-group"><label class="form-label">Days to Harvest</label><input class="form-control" id="f-dth" type="number" value="${lot ? lot.days_to_harvest || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Days to Germination</label><input class="form-control" id="f-dtg" placeholder="e.g. 7-14 or 10" value="${lot ? lot.days_to_germination || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Days to Harvest</label><input class="form-control" id="f-dth" placeholder="e.g. 60-70 or 67" value="${lot ? lot.days_to_harvest || '' : ''}"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Planting Depth</label><input class="form-control" id="f-depth" placeholder="e.g. 1/4 - 1/2 in" value="${lot ? lot.planting_depth_inches || '' : ''}"></div>
@@ -701,6 +711,10 @@ function seedLotForm(lot) {
       </div>
     </div>
 
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Origin</label><input class="form-control" id="f-origin" value="${lot ? lot.origin || '' : ''}" placeholder="e.g. Italy, Appalachia, Netherlands"></div>
+      <div class="form-group"><label class="form-label">Container Size (if container variety)</label><input class="form-control" id="f-contsize" value="${lot ? lot.container_size || '' : ''}" placeholder="e.g. 5 gallon minimum, 12 inch pot"></div>
+    </div>
     <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">📝 Notes</div>
     <div class="form-group"><textarea class="form-control" id="f-notes" rows="3">${lot ? lot.notes || '' : ''}</textarea></div>
     <div class="form-actions">
@@ -734,6 +748,8 @@ function getSeedLotFormData(lot) {
     sell_by_date: document.getElementById('f-sellby').value || null,
     days_to_germination: document.getElementById('f-dtg').value || null,
     days_to_harvest: document.getElementById('f-dth').value || null,
+    origin: document.getElementById('f-origin') ? document.getElementById('f-origin').value || null : null,
+    container_size: document.getElementById('f-contsize') ? document.getElementById('f-contsize').value || null : null,
     planting_depth_inches: document.getElementById('f-depth').value || null,
     spacing_inches: document.getElementById('f-spacing').value || null,
     row_spacing_inches: document.getElementById('f-rowspacing').value || null,
@@ -751,14 +767,45 @@ async function submitSeedLot() {
   const variety_code = document.getElementById('f-variety').value;
   const generation = document.getElementById('f-gen').value;
   const year_saved = document.getElementById('f-yearsaved').value;
-  if (!variety_code || !generation || !year_saved) return alert('Variety, generation and year are required');
+  let hasError = false;
+
+  const varietyEl = document.getElementById('f-variety');
+  const genEl = document.getElementById('f-gen');
+  const yearEl = document.getElementById('f-yearsaved');
+
+  [varietyEl, genEl, yearEl].forEach(el => el.style.borderColor = '');
+
+  if (!variety_code) { varietyEl.style.borderColor = '#ef4444'; hasError = true; }
+  if (generation === '' || generation === null) { genEl.style.borderColor = '#ef4444'; hasError = true; }
+  if (!year_saved) { yearEl.style.borderColor = '#ef4444'; hasError = true; }
+
+  if (hasError) {
+    const errDiv = document.getElementById('seedlot-form-error');
+    if (errDiv) { errDiv.textContent = 'Please fill in the fields highlighted in red.'; errDiv.classList.remove('hidden'); }
+    return;
+  }
+
   const result = await api('/api/seed-lots', 'POST', { variety_code, generation: parseInt(generation), year_saved: parseInt(year_saved), ...getSeedLotFormData(null) });
+
+  if (result && result.error) {
+    const errDiv = document.getElementById('seedlot-form-error');
+    if (errDiv) { errDiv.textContent = '❌ ' + result.error; errDiv.classList.remove('hidden'); }
+    return;
+  }
+
   closeModal(); await loadAll(); render();
-  setTimeout(() => alert('✅ Seed lot created!\nDesignation: ' + result.designation), 100);
+  if (result && result.designation) {
+    setTimeout(() => alert('✅ Seed lot created!\nDesignation: ' + result.designation), 100);
+  }
 }
 
 async function submitEditSeedLot(designation) {
-  await api('/api/seed-lots/' + designation, 'PUT', getSeedLotFormData(true));
+  const data = getSeedLotFormData(true);
+  const genEl = document.getElementById('f-editgen');
+  const yearEl = document.getElementById('f-edityear');
+  if (genEl) data.generation = parseInt(genEl.value);
+  if (yearEl) data.year_saved = parseInt(yearEl.value);
+  await api('/api/seed-lots/' + designation, 'PUT', data);
   closeModal(); await loadAll(); render();
 }
 

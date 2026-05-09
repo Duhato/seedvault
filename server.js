@@ -587,9 +587,9 @@ app.get('/api/seed-lots', authMiddleware, async (req, res) => {
 });
 app.post('/api/seed-lots', authMiddleware, async (req, res) => {
   const variety_code = validateCode(req.body.variety_code, 20);
-  const generation = validateInt(req.body.generation, 1, 100);
+  const generation = req.body.generation !== undefined && req.body.generation !== null && req.body.generation !== "" ? parseInt(req.body.generation) : null;
   const year_saved = validateYear(req.body.year_saved);
-  if (!variety_code || !generation || !year_saved) return res.status(400).json({ error: 'Variety, generation and year required' });
+  if (!variety_code || generation === null || isNaN(generation) || !year_saved) return res.status(400).json({ error: 'Variety, generation and year required' });
   try {
     const designation = variety_code + '-G' + generation + '-' + year_saved;
     res.json((await pool.query(`INSERT INTO seed_lots (designation, variety_code, generation, year_saved,
@@ -598,8 +598,9 @@ app.post('/api/seed-lots', authMiddleware, async (req, res) => {
       lot_number, upc_code, packed_for_year, sell_by_date,
       days_to_germination, days_to_harvest, planting_depth_inches,
       spacing_inches, row_spacing_inches, sun_requirements, watering_needs,
-      container_variety, direct_sow, start_indoors_weeks, soil_temp_min_f, frost_tolerance)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *`,
+      container_variety, direct_sow, start_indoors_weeks, soil_temp_min_f, frost_tolerance,
+      origin, container_size)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
       [designation, variety_code, generation, year_saved,
       validateInt(req.body.quantity_estimate, 0, 100000),
       validateDecimal(req.body.quantity_weight),
@@ -612,8 +613,8 @@ app.post('/api/seed-lots', authMiddleware, async (req, res) => {
       sanitizeString(req.body.upc_code, 50),
       validateYear(req.body.packed_for_year),
       sanitizeString(req.body.sell_by_date, 20),
-      validateInt(req.body.days_to_germination, 1, 365),
-      validateInt(req.body.days_to_harvest, 1, 365),
+      sanitizeString(req.body.days_to_germination, 20),
+      sanitizeString(req.body.days_to_harvest, 20),
       sanitizeString(req.body.planting_depth_inches, 50),
       sanitizeString(req.body.spacing_inches, 50),
       sanitizeString(req.body.row_spacing_inches, 50),
@@ -623,13 +624,28 @@ app.post('/api/seed-lots', authMiddleware, async (req, res) => {
       req.body.direct_sow !== false && req.body.direct_sow !== 'false',
       validateInt(req.body.start_indoors_weeks, 1, 20),
       validateInt(req.body.soil_temp_min_f, 32, 100),
-      sanitizeString(req.body.frost_tolerance, 50)]
+      sanitizeString(req.body.frost_tolerance, 50),
+      sanitizeString(req.body.origin, 100),
+      sanitizeString(req.body.container_size, 100)]
     )).rows[0]);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 app.put('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
   const designation = sanitizeString(req.params.designation, 50);
-  try { res.json((await pool.query(`UPDATE seed_lots SET
+  try {
+    const editGen = req.body.generation !== undefined && req.body.generation !== '' ? parseInt(req.body.generation) : null;
+    const editYear = validateYear(req.body.year_saved);
+    if (editGen !== null && !isNaN(editGen) && editYear) {
+      const lot = (await pool.query('SELECT variety_code FROM seed_lots WHERE designation=$1', [designation])).rows[0];
+      if (lot) {
+        const newDesignation = lot.variety_code + '-G' + editGen + '-' + editYear;
+        if (newDesignation !== designation) {
+          await pool.query('UPDATE seed_lots SET designation=$1, generation=$2, year_saved=$3 WHERE designation=$4', [newDesignation, editGen, editYear, designation]);
+          designation = newDesignation;
+        }
+      }
+    }
+    res.json((await pool.query(`UPDATE seed_lots SET
       quantity_estimate=$1, quantity_weight=$2, quantity_unit=$3,
       notes=$4, storage_location=$5, germination_rate=$6, last_tested=$7,
       mother_designation=$8, father_designation=$9,
@@ -637,8 +653,8 @@ app.put('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
       days_to_germination=$14, days_to_harvest=$15, planting_depth_inches=$16,
       spacing_inches=$17, row_spacing_inches=$18, sun_requirements=$19, watering_needs=$20,
       container_variety=$21, direct_sow=$22, start_indoors_weeks=$23,
-      soil_temp_min_f=$24, frost_tolerance=$25
-      WHERE designation=$26 RETURNING *`,
+      soil_temp_min_f=$24, frost_tolerance=$25, origin=$26, container_size=$27
+      WHERE designation=$28 RETURNING *`,
     [validateInt(req.body.quantity_estimate, 0, 100000),
     validateDecimal(req.body.quantity_weight),
     sanitizeString(req.body.quantity_unit, 10) || 'seeds',
@@ -652,8 +668,8 @@ app.put('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
     sanitizeString(req.body.upc_code, 50),
     validateYear(req.body.packed_for_year),
     sanitizeString(req.body.sell_by_date, 20),
-    validateInt(req.body.days_to_germination, 1, 365),
-    validateInt(req.body.days_to_harvest, 1, 365),
+    sanitizeString(req.body.days_to_germination, 20),
+    sanitizeString(req.body.days_to_harvest, 20),
     sanitizeString(req.body.planting_depth_inches, 50),
     sanitizeString(req.body.spacing_inches, 50),
     sanitizeString(req.body.row_spacing_inches, 50),
@@ -664,6 +680,8 @@ app.put('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
     validateInt(req.body.start_indoors_weeks, 1, 20),
     validateInt(req.body.soil_temp_min_f, 32, 100),
     sanitizeString(req.body.frost_tolerance, 50),
+    sanitizeString(req.body.origin, 100),
+    sanitizeString(req.body.container_size, 100),
     designation]
   )).rows[0]); }
   catch (err) { res.status(500).json({ error: 'Server error' }); }
