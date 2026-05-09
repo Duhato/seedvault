@@ -98,7 +98,7 @@ const state = {
   varieties: [], seedLots: [], plants: [], projects: [],
   harvest: [], species: [], stats: {}, viability: [],
   germination: [], users: [], locations: [], sources: [],
-  crosses: [], observations: []
+  crosses: [], observations: [], amendments: []
 };
 
 async function api(path, method = 'GET', body = null) {
@@ -111,11 +111,7 @@ async function api(path, method = 'GET', body = null) {
 async function uploadPhoto(url, file) {
   const formData = new FormData();
   formData.append('photo', file);
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + getToken() },
-    body: formData
-  });
+  const res = await fetch(url, { method: 'POST', headers: { 'Authorization': 'Bearer ' + getToken() }, body: formData });
   return res.json();
 }
 
@@ -124,7 +120,7 @@ async function loadAll() {
     api('/api/varieties'), api('/api/seed-lots'), api('/api/plants'), api('/api/projects'),
     api('/api/harvest'), api('/api/species'), api('/api/stats'), api('/api/viability'),
     api('/api/germination'), api('/api/locations'), api('/api/sources'),
-    api('/api/crosses'), api('/api/observations'),
+    api('/api/crosses'), api('/api/observations'), api('/api/amendments'),
   ];
   if (getRole() === 'admin') calls.push(api('/api/users'));
   const results = await Promise.all(calls);
@@ -141,7 +137,8 @@ async function loadAll() {
   state.sources = Array.isArray(results[10]) ? results[10] : [];
   state.crosses = Array.isArray(results[11]) ? results[11] : [];
   state.observations = Array.isArray(results[12]) ? results[12] : [];
-  state.users = results[13] && Array.isArray(results[13]) ? results[13] : [];
+  state.amendments = Array.isArray(results[13]) ? results[13] : [];
+  state.users = results[14] && Array.isArray(results[14]) ? results[14] : [];
 }
 
 function navigate(page) {
@@ -173,6 +170,7 @@ function render() {
     case 'locations': main.innerHTML = renderLocations(); break;
     case 'crosses': main.innerHTML = renderCrosses(); break;
     case 'observations': main.innerHTML = renderObservations(); break;
+    case 'amendments': main.innerHTML = renderAmendments(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
   }
 }
@@ -199,7 +197,7 @@ function renderDashboard() {
       <div style="display:flex;flex-direction:column;gap:8px;">
         ${state.viability.map(lot => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${lot.status === 'expired' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'};border-radius:6px;">
-            <div><span class="designation" style="cursor:pointer;" onclick="navigate('seedlots')">${lot.designation}</span>
+            <div><span class="designation" style="cursor:pointer;" onclick="showSeedLotDetail('${lot.designation}')">${lot.designation}</span>
             <span style="margin-left:8px;font-size:0.85rem;color:var(--text-muted);">${lot.variety_name}</span></div>
             <span style="font-size:0.85rem;font-weight:700;color:${lot.status === 'expired' ? '#ef4444' : '#f59e0b'};">
               ${lot.status === 'expired' ? '🔴 Expired' : '🟡 Expires in ' + lot.yearsLeft + ' year' + (lot.yearsLeft === 1 ? '' : 's')}
@@ -214,7 +212,7 @@ function renderDashboard() {
         ${recentLots.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No seed lots yet.</p>' : `
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${recentLots.map(lot => `
-            <div class="clickable-row" onclick="navigate('seedlots')" style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+            <div class="clickable-row" onclick="showSeedLotDetail('${lot.designation}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
               <span class="designation">${lot.designation}</span>
               <span class="gen-badge">G${lot.generation}</span>
             </div>
@@ -280,6 +278,114 @@ function renderDashboard() {
   `;
 }
 
+// FULL PHOTO VIEWER
+function showFullPhoto(path, title) {
+  openModal(title, `
+    <img src="${path}" style="width:100%;border-radius:8px;border:2px solid var(--border);">
+    <div class="form-actions" style="margin-top:12px;">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  `);
+}
+
+// SEED LOT DETAIL VIEW
+function showSeedLotDetail(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  if (!lot) return;
+  const plants = state.plants.filter(p => p.seed_lot_designation === designation);
+  const germTests = state.germination.filter(g => g.seed_lot_designation === designation);
+  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3 };
+  const maxYears = viabilityYears[lot.species_code] || 3;
+  const yearsLeft = maxYears - (new Date().getFullYear() - lot.year_saved);
+  const viabilityColor = yearsLeft <= 0 ? '#ef4444' : yearsLeft <= 1 ? '#f59e0b' : '#22c55e';
+  const viabilityText = yearsLeft <= 0 ? '🔴 Expired' : yearsLeft <= 1 ? '🟡 Expires in ' + yearsLeft + ' year' + (yearsLeft === 1 ? '' : 's') : '🟢 Good — ' + yearsLeft + ' years left';
+
+  const qtyDisplay = lot.quantity_unit === 'seeds' || !lot.quantity_unit
+    ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—')
+    : (lot.quantity_weight ? lot.quantity_weight + ' ' + lot.quantity_unit : '—');
+
+  openModal('🫙 ' + designation, `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:1.1rem;font-weight:700;">${lot.variety_name || lot.variety_code}</div>
+          <div style="font-size:0.85rem;color:var(--text-muted);">Generation ${lot.generation} · Saved ${lot.year_saved}</div>
+        </div>
+        <span style="font-weight:700;color:${viabilityColor};">${viabilityText}</span>
+      </div>
+
+      ${lot.packet_front_path || lot.packet_back_path ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        ${lot.packet_front_path ? `<div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Front</div>
+          <img src="${lot.packet_front_path}" style="width:100%;border-radius:8px;border:2px solid var(--border);cursor:pointer;" onclick="showFullPhoto('${lot.packet_front_path}', 'Front — ${designation}')">
+        </div>` : ''}
+        ${lot.packet_back_path ? `<div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Back</div>
+          <img src="${lot.packet_back_path}" style="width:100%;border-radius:8px;border:2px solid var(--border);cursor:pointer;" onclick="showFullPhoto('${lot.packet_back_path}', 'Back — ${designation}')">
+        </div>` : ''}
+      </div>` : ''}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--green-bg);padding:12px;border-radius:8px;">
+        <div><span style="font-size:0.8rem;color:var(--text-muted);">Quantity</span><div style="font-weight:600;">${qtyDisplay}</div></div>
+        <div><span style="font-size:0.8rem;color:var(--text-muted);">Storage</span><div style="font-weight:600;">${lot.storage_location || '—'}</div></div>
+        <div><span style="font-size:0.8rem;color:var(--text-muted);">Germination Rate</span><div style="font-weight:600;">${lot.germination_rate ? lot.germination_rate + '%' : '—'}</div></div>
+        <div><span style="font-size:0.8rem;color:var(--text-muted);">Last Tested</span><div style="font-weight:600;">${lot.last_tested ? new Date(lot.last_tested).toLocaleDateString() : '—'}</div></div>
+        ${lot.lot_number ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Lot Number</span><div style="font-weight:600;">${lot.lot_number}</div></div>` : ''}
+        ${lot.packed_for_year ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Packed For</span><div style="font-weight:600;">${lot.packed_for_year}</div></div>` : ''}
+        ${lot.upc_code ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">UPC</span><div style="font-weight:600;">${lot.upc_code}</div></div>` : ''}
+      </div>
+
+      ${lot.days_to_germination || lot.days_to_harvest || lot.planting_depth_inches || lot.spacing_inches || lot.sun_requirements ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌱 Growing Information</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--green-bg);padding:12px;border-radius:8px;">
+          ${lot.days_to_germination ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Days to Germinate</span><div style="font-weight:600;">${lot.days_to_germination} days</div></div>` : ''}
+          ${lot.days_to_harvest ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Days to Harvest</span><div style="font-weight:600;">${lot.days_to_harvest} days</div></div>` : ''}
+          ${lot.planting_depth_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Planting Depth</span><div style="font-weight:600;">${lot.planting_depth_inches}"</div></div>` : ''}
+          ${lot.spacing_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Spacing</span><div style="font-weight:600;">${lot.spacing_inches}"</div></div>` : ''}
+          ${lot.row_spacing_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Row Spacing</span><div style="font-weight:600;">${lot.row_spacing_inches}"</div></div>` : ''}
+          ${lot.sun_requirements ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Sun</span><div style="font-weight:600;">${lot.sun_requirements}</div></div>` : ''}
+          ${lot.watering_needs ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Watering</span><div style="font-weight:600;">${lot.watering_needs}</div></div>` : ''}
+          ${lot.soil_temp_min_f ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Min Soil Temp</span><div style="font-weight:600;">${lot.soil_temp_min_f}°F</div></div>` : ''}
+          ${lot.start_indoors_weeks ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Start Indoors</span><div style="font-weight:600;">${lot.start_indoors_weeks} weeks before last frost</div></div>` : ''}
+          ${lot.frost_tolerance ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Frost Tolerance</span><div style="font-weight:600;">${lot.frost_tolerance}</div></div>` : ''}
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Direct Sow</span><div style="font-weight:600;">${lot.direct_sow ? 'Yes' : 'No — start indoors'}</div></div>
+          ${lot.container_variety ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Container Variety</span><div style="font-weight:600;">✅ Yes</div></div>` : ''}
+        </div>
+      </div>` : ''}
+
+      ${lot.notes ? `<div><div style="font-weight:700;margin-bottom:4px;font-size:0.9rem;">Notes</div><div style="font-size:0.9rem;color:var(--text-muted);">${lot.notes}</div></div>` : ''}
+
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🪴 Plants from this lot (${plants.length})</div>
+        ${plants.length === 0 ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants logged yet.</p>'
+        : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${plants.map(p => `<span class="designation" style="font-size:0.75rem;">${p.designation}${p.selected_for_seed ? ' ⭐' : ''}</span>`).join('')}</div>`}
+      </div>
+
+      ${germTests.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌿 Germination Tests</div>
+        ${germTests.map(g => {
+          const rate = g.seeds_germinated !== null && g.seeds_planted ? Math.round((g.seeds_germinated / g.seeds_planted) * 100) : null;
+          return `<div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+            ${new Date(g.date_started).toLocaleDateString()} — ${g.seeds_planted} planted
+            ${rate !== null ? `→ <strong>${rate}%</strong> germination` : '(pending)'}
+            ${g.days_to_germination ? `in ${g.days_to_germination} days` : ''}
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="closeModal(); showEditSeedLot('${designation}');">✏️ Edit</button>
+        <button class="btn btn-brown btn-sm" onclick="closeModal(); showPacketPhotos('${designation}');">📷 Photos</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal(); showAddPlants('${designation}');">+ Add Plants</button>
+      </div>
+    </div>
+  `);
+}
+
 function renderVarieties() {
   return `
     <div class="page-header"><h1 class="page-title">🌿 Varieties</h1><button class="btn btn-primary" onclick="showAddVariety()">+ Add Variety</button></div>
@@ -289,14 +395,14 @@ function renderVarieties() {
         <thead><tr><th>Code</th><th>Name</th><th>Species</th><th>Type</th><th>Source</th><th>Year</th><th>Lots</th><th>Actions</th></tr></thead>
         <tbody>${state.varieties.map(v => {
           const lots = state.seedLots.filter(l => l.variety_code === v.code).length;
-          return `<tr>
+          return `<tr style="cursor:pointer;" onclick="showVarietyDetail('${v.code}')">
             <td><span class="designation">${v.code}</span></td>
             <td><strong>${v.name}</strong></td>
             <td>${v.species_name || v.species_code}</td>
             <td><span class="tag tag-${v.type.toLowerCase()}">${v.type}</span></td>
             <td>${v.source || '—'}</td><td>${v.year_acquired || '—'}</td>
             <td><span class="gen-badge">${lots}</span></td>
-            <td style="display:flex;gap:4px;">
+            <td onclick="event.stopPropagation()" style="display:flex;gap:4px;">
               <button class="btn btn-secondary btn-sm" onclick="showEditVariety('${v.code}')">✏️ Edit</button>
               <button class="btn btn-danger btn-sm" onclick="deleteVariety('${v.code}')">🗑️</button>
             </td>
@@ -305,6 +411,44 @@ function renderVarieties() {
       </table></div>`}
     </div>
   `;
+}
+
+function showVarietyDetail(code) {
+  const v = state.varieties.find(x => x.code === code);
+  const lots = state.seedLots.filter(l => l.variety_code === code);
+  openModal('🌿 ' + v.name, `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="background:var(--green-bg);padding:12px;border-radius:8px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Code</span><div><span class="designation">${v.code}</span></div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Species</span><div style="font-weight:600;">${v.species_name || v.species_code}</div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Type</span><div><span class="tag tag-${v.type.toLowerCase()}">${v.type}</span></div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Source</span><div style="font-weight:600;">${v.source || '—'}</div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Year Acquired</span><div style="font-weight:600;">${v.year_acquired || '—'}</div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Seed Lots</span><div><span class="gen-badge">${lots.length}</span></div></div>
+        </div>
+        ${v.description ? `<div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">${v.description}</div>` : ''}
+      </div>
+      ${lots.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">Seed Lots</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${lots.map(l => `
+            <div class="clickable-row" onclick="closeModal(); showSeedLotDetail('${l.designation}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+              <span class="designation">${l.designation}</span>
+              <div style="display:flex;gap:8px;align-items:center;">
+                ${l.germination_rate ? `<span style="font-size:0.8rem;">${l.germination_rate}% germ</span>` : ''}
+                <span class="gen-badge">G${l.generation}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="closeModal(); showEditVariety('${code}');">✏️ Edit</button>
+      </div>
+    </div>
+  `);
 }
 
 function showAddVariety() { openModal('Add New Variety', varietyForm(null)); }
@@ -359,32 +503,32 @@ async function deleteVariety(code) {
 
 function renderSeedLots() {
   const currentYear = new Date().getFullYear();
-  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3 };
+  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3 };
   return `
     <div class="page-header"><h1 class="page-title">🫙 Seed Lots</h1><button class="btn btn-primary" onclick="showAddSeedLot()">+ Add Seed Lot</button></div>
     <div class="card">
       ${state.seedLots.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>No seed lots yet.</p></div>`
       : `<div class="table-wrap"><table>
-        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Qty</th><th>Storage</th><th>Germination</th><th>Packet</th><th>Viability</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Quantity</th><th>Storage</th><th>Germination</th><th>Viability</th><th>Actions</th></tr></thead>
         <tbody>${state.seedLots.map(lot => {
           const maxYears = viabilityYears[lot.species_code] || 3;
           const yearsLeft = maxYears - (currentYear - lot.year_saved);
           let viabilityBadge = '<span style="color:#22c55e;font-weight:600;">🟢 Good</span>';
           if (yearsLeft <= 0) viabilityBadge = '<span style="color:#ef4444;font-weight:600;">🔴 Expired</span>';
           else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#f59e0b;font-weight:600;">🟡 Expiring</span>';
-          const hasPhotos = lot.packet_front_path || lot.packet_back_path;
-          return `<tr>
+          const qtyDisplay = lot.quantity_unit === 'seeds' || !lot.quantity_unit
+            ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—')
+            : (lot.quantity_weight ? lot.quantity_weight + ' ' + lot.quantity_unit : '—');
+          return `<tr style="cursor:pointer;" onclick="showSeedLotDetail('${lot.designation}')">
             <td><span class="designation">${lot.designation}</span></td>
             <td>${lot.variety_name || lot.variety_code}</td>
             <td><span class="gen-badge">G${lot.generation}</span></td>
             <td>${lot.year_saved}</td>
-            <td>${lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—'}</td>
+            <td>${qtyDisplay}</td>
             <td>${lot.storage_location || '—'}</td>
             <td>${lot.germination_rate ? lot.germination_rate + '%' : '—'}</td>
-            <td>${hasPhotos ? '<span style="color:#22c55e;">📷 Photos</span>' : '<span style="color:var(--text-muted);font-size:0.8rem;">No photos</span>'}</td>
             <td>${viabilityBadge}</td>
-            <td style="display:flex;gap:4px;flex-wrap:wrap;">
-              <button class="btn btn-secondary btn-sm" onclick="showAddPlants('${lot.designation}')">+ Plants</button>
+            <td onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;">
               <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
               <button class="btn btn-brown btn-sm" onclick="showPacketPhotos('${lot.designation}')">📷</button>
               <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
@@ -433,23 +577,24 @@ async function uploadPacketPhoto(designation, side) {
   if (!file) return;
   const result = await uploadPhoto('/api/seed-lots/' + designation + '/packet/' + side, file);
   if (result.error) return alert('Upload failed: ' + result.error);
-  await loadAll();
-  showPacketPhotos(designation);
+  await loadAll(); showPacketPhotos(designation);
 }
 
 async function deletePacketPhoto(designation, side) {
   if (!confirm('Remove this photo?')) return;
   await api('/api/seed-lots/' + designation + '/packet/' + side, 'DELETE');
-  await loadAll();
-  showPacketPhotos(designation);
+  await loadAll(); showPacketPhotos(designation);
 }
 
 function showAddSeedLot() { openModal('Add Seed Lot', seedLotForm(null)); }
 function showEditSeedLot(designation) { openModal('Edit Seed Lot — ' + designation, seedLotForm(state.seedLots.find(l => l.designation === designation))); }
 
 function seedLotForm(lot) {
+  const sunOptions = ['Full Sun', 'Partial Sun', 'Partial Shade', 'Full Shade'];
+  const waterOptions = ['Low', 'Medium', 'High'];
+  const frostOptions = ['Hardy — survives hard frost', 'Semi-hardy — light frost ok', 'Tender — no frost'];
   return `
-    ${!lot ? '<div class="alert alert-info">Designation code is generated automatically.</div>' : ''}
+    ${!lot ? '<div class="alert alert-info">Designation is auto-generated from variety + generation + year.</div>' : ''}
     ${!lot ? `
     <div class="form-group"><label class="form-label">Variety *</label>
       <select class="form-control" id="f-variety">
@@ -458,20 +603,102 @@ function seedLotForm(lot) {
       </select>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Generation *</label><input class="form-control" id="f-gen" type="number" min="1" value="1"></div>
-      <div class="form-group"><label class="form-label">Year Saved *</label><input class="form-control" id="f-yearsaved" type="number" value="${new Date().getFullYear()}"></div>
+      <div class="form-group"><label class="form-label">Generation *</label><input class="form-control" id="f-gen" type="number" min="0" value="0"></div>
+      <div class="form-group"><label class="form-label">Year Saved/Bought *</label><input class="form-control" id="f-yearsaved" type="number" value="${new Date().getFullYear()}"></div>
     </div>` : ''}
+
+    <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">📦 Packet Info</div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Quantity Estimate (seeds)</label><input class="form-control" id="f-qty" type="number" value="${lot ? lot.quantity_estimate || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Lot Number</label><input class="form-control" id="f-lotnum" value="${lot ? lot.lot_number || '' : ''}" placeholder="e.g. A2847"></div>
+      <div class="form-group"><label class="form-label">Packed For Year</label><input class="form-control" id="f-packedyear" type="number" value="${lot ? lot.packed_for_year || '' : ''}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">UPC Code</label><input class="form-control" id="f-upc" value="${lot ? lot.upc_code || '' : ''}" placeholder="Barcode number from packet"></div>
+
+    <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">🌱 Quantity</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Unit</label>
+        <select class="form-control" id="f-qtyunit" onchange="toggleQtyFields()">
+          <option value="seeds" ${!lot || lot.quantity_unit === 'seeds' ? 'selected' : ''}>Seeds (count)</option>
+          <option value="mg" ${lot && lot.quantity_unit === 'mg' ? 'selected' : ''}>Milligrams (mg)</option>
+          <option value="g" ${lot && lot.quantity_unit === 'g' ? 'selected' : ''}>Grams (g)</option>
+          <option value="oz" ${lot && lot.quantity_unit === 'oz' ? 'selected' : ''}>Ounces (oz)</option>
+        </select>
+      </div>
+      <div class="form-group" id="qty-count-group">
+        <label class="form-label">Seed Count</label>
+        <input class="form-control" id="f-qty" type="number" value="${lot ? lot.quantity_estimate || '' : ''}">
+      </div>
+      <div class="form-group hidden" id="qty-weight-group">
+        <label class="form-label">Weight</label>
+        <input class="form-control" id="f-qtyweight" type="number" step="0.01" value="${lot ? lot.quantity_weight || '' : ''}">
+      </div>
+    </div>
+
+    <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">📍 Storage</div>
+    <div class="form-row">
       <div class="form-group"><label class="form-label">Storage Location</label><input class="form-control" id="f-storage" value="${lot ? lot.storage_location || '' : ''}" placeholder="e.g. Ammo box"></div>
-    </div>
-    <div class="form-row">
       <div class="form-group"><label class="form-label">Germination Rate %</label><input class="form-control" id="f-germrate" type="number" min="0" max="100" value="${lot ? lot.germination_rate || '' : ''}"></div>
-      <div class="form-group"><label class="form-label">Last Tested Date</label><input class="form-control" id="f-lasttest" type="date" value="${lot && lot.last_tested ? lot.last_tested.split('T')[0] : ''}"></div>
     </div>
+    ${lot ? `<div class="form-group"><label class="form-label">Last Tested Date</label><input class="form-control" id="f-lasttest" type="date" value="${lot && lot.last_tested ? lot.last_tested.split('T')[0] : ''}"></div>` : ''}
     <div class="form-group"><label class="form-label">Mother Plant Designation</label><input class="form-control" id="f-mother" value="${lot ? lot.mother_designation || '' : ''}"></div>
     <div class="form-group"><label class="form-label">Father Plant Designation</label><input class="form-control" id="f-father" value="${lot ? lot.father_designation || '' : ''}"></div>
-    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3">${lot ? lot.notes || '' : ''}</textarea></div>
+
+    <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">🌱 Growing Information</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Days to Germination</label><input class="form-control" id="f-dtg" type="number" value="${lot ? lot.days_to_germination || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Days to Harvest</label><input class="form-control" id="f-dth" type="number" value="${lot ? lot.days_to_harvest || '' : ''}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Planting Depth (inches)</label><input class="form-control" id="f-depth" type="number" step="0.25" value="${lot ? lot.planting_depth_inches || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Plant Spacing (inches)</label><input class="form-control" id="f-spacing" type="number" value="${lot ? lot.spacing_inches || '' : ''}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Row Spacing (inches)</label><input class="form-control" id="f-rowspacing" type="number" value="${lot ? lot.row_spacing_inches || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Min Soil Temp (°F)</label><input class="form-control" id="f-soiltemp" type="number" value="${lot ? lot.soil_temp_min_f || '' : ''}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Sun Requirements</label>
+        <select class="form-control" id="f-sun">
+          <option value="">Select...</option>
+          ${sunOptions.map(s => `<option value="${s}" ${lot && lot.sun_requirements === s ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Watering Needs</label>
+        <select class="form-control" id="f-water">
+          <option value="">Select...</option>
+          ${waterOptions.map(w => `<option value="${w}" ${lot && lot.watering_needs === w ? 'selected' : ''}>${w}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Frost Tolerance</label>
+        <select class="form-control" id="f-frost">
+          <option value="">Select...</option>
+          ${frostOptions.map(f => `<option value="${f}" ${lot && lot.frost_tolerance === f ? 'selected' : ''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Start Indoors (weeks before last frost)</label>
+        <input class="form-control" id="f-indoor" type="number" value="${lot ? lot.start_indoors_weeks || '' : ''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Sowing Method</label>
+        <select class="form-control" id="f-directsow">
+          <option value="true" ${!lot || lot.direct_sow ? 'selected' : ''}>Direct Sow</option>
+          <option value="false" ${lot && !lot.direct_sow ? 'selected' : ''}>Start Indoors / Transplant</option>
+          <option value="both">Both OK</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Container Variety</label>
+        <select class="form-control" id="f-container">
+          <option value="false" ${!lot || !lot.container_variety ? 'selected' : ''}>No</option>
+          <option value="true" ${lot && lot.container_variety ? 'selected' : ''}>Yes</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">📝 Notes</div>
+    <div class="form-group"><textarea class="form-control" id="f-notes" rows="3">${lot ? lot.notes || '' : ''}</textarea></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="${lot ? `submitEditSeedLot('${lot.designation}')` : 'submitSeedLot()'}">${lot ? 'Save Changes' : 'Save Seed Lot'}</button>
@@ -479,18 +706,54 @@ function seedLotForm(lot) {
   `;
 }
 
+function toggleQtyFields() {
+  const unit = document.getElementById('f-qtyunit').value;
+  const isSeeds = unit === 'seeds';
+  document.getElementById('qty-count-group').classList.toggle('hidden', !isSeeds);
+  document.getElementById('qty-weight-group').classList.toggle('hidden', isSeeds);
+}
+
+function getSeedLotFormData(lot) {
+  const unit = document.getElementById('f-qtyunit').value;
+  return {
+    quantity_estimate: unit === 'seeds' ? (document.getElementById('f-qty').value || null) : null,
+    quantity_weight: unit !== 'seeds' ? (document.getElementById('f-qtyweight').value || null) : null,
+    quantity_unit: unit,
+    storage_location: document.getElementById('f-storage').value,
+    germination_rate: document.getElementById('f-germrate').value || null,
+    last_tested: lot && document.getElementById('f-lasttest') ? document.getElementById('f-lasttest').value || null : null,
+    mother_designation: document.getElementById('f-mother').value,
+    father_designation: document.getElementById('f-father').value,
+    lot_number: document.getElementById('f-lotnum').value,
+    upc_code: document.getElementById('f-upc').value,
+    packed_for_year: document.getElementById('f-packedyear').value || null,
+    days_to_germination: document.getElementById('f-dtg').value || null,
+    days_to_harvest: document.getElementById('f-dth').value || null,
+    planting_depth_inches: document.getElementById('f-depth').value || null,
+    spacing_inches: document.getElementById('f-spacing').value || null,
+    row_spacing_inches: document.getElementById('f-rowspacing').value || null,
+    sun_requirements: document.getElementById('f-sun').value || null,
+    watering_needs: document.getElementById('f-water').value || null,
+    frost_tolerance: document.getElementById('f-frost').value || null,
+    start_indoors_weeks: document.getElementById('f-indoor').value || null,
+    direct_sow: document.getElementById('f-directsow').value !== 'false',
+    container_variety: document.getElementById('f-container').value === 'true',
+    notes: document.getElementById('f-notes').value,
+  };
+}
+
 async function submitSeedLot() {
   const variety_code = document.getElementById('f-variety').value;
   const generation = document.getElementById('f-gen').value;
   const year_saved = document.getElementById('f-yearsaved').value;
   if (!variety_code || !generation || !year_saved) return alert('Variety, generation and year are required');
-  const result = await api('/api/seed-lots', 'POST', { variety_code, generation: parseInt(generation), year_saved: parseInt(year_saved), quantity_estimate: document.getElementById('f-qty').value || null, storage_location: document.getElementById('f-storage').value, mother_designation: document.getElementById('f-mother').value, father_designation: document.getElementById('f-father').value, notes: document.getElementById('f-notes').value });
+  const result = await api('/api/seed-lots', 'POST', { variety_code, generation: parseInt(generation), year_saved: parseInt(year_saved), ...getSeedLotFormData(null) });
   closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ Seed lot created!\nDesignation: ' + result.designation), 100);
 }
 
 async function submitEditSeedLot(designation) {
-  await api('/api/seed-lots/' + designation, 'PUT', { quantity_estimate: document.getElementById('f-qty').value || null, storage_location: document.getElementById('f-storage').value, germination_rate: document.getElementById('f-germrate').value || null, last_tested: document.getElementById('f-lasttest').value || null, mother_designation: document.getElementById('f-mother').value, father_designation: document.getElementById('f-father').value, notes: document.getElementById('f-notes').value });
+  await api('/api/seed-lots/' + designation, 'PUT', getSeedLotFormData(true));
   closeModal(); await loadAll(); render();
 }
 
@@ -519,6 +782,7 @@ function renderPlants() {
             <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
             <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
             <button class="btn btn-secondary btn-sm" onclick="showPlantPhotoUpload('${p.designation}')">📷</button>
+            <button class="btn btn-primary btn-sm" onclick="showAddAmendment('${p.designation}')">🌿 Amend</button>
             <button class="btn btn-danger btn-sm" onclick="deletePlant('${p.designation}')">🗑️</button>
           </td>
         </tr>`).join('')}</tbody>
@@ -679,157 +943,31 @@ async function deletePlant(designation) {
   await api('/api/plants/' + designation, 'DELETE'); await loadAll(); render();
 }
 
-// CROSS POLLINATION
-function renderCrosses() {
+// AMENDMENTS
+function renderAmendments() {
   return `
-    <div class="page-header"><h1 class="page-title">🌸 Cross Pollination</h1><button class="btn btn-primary" onclick="showAddCross()">+ Log Cross</button></div>
-    ${state.crosses.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🌸</div><p>No cross pollinations logged yet.</p></div></div>`
-    : state.crosses.map(c => {
-      const statusColor = c.success === true ? '#22c55e' : c.success === false ? '#ef4444' : '#f59e0b';
-      const statusText = c.success === true ? '✅ Success' : c.success === false ? '❌ Failed' : '⏳ Pending';
-      return `
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
-            <div>
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-                <span class="designation" style="font-size:0.8rem;">${c.mother_designation}</span>
-                <span style="font-size:1.2rem;">×</span>
-                <span class="designation" style="font-size:0.8rem;">${c.father_designation || '?'}</span>
-                ${c.project_code ? `<span class="tag tag-active">${c.project_code}</span>` : ''}
-              </div>
-              <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-muted);">
-                ${c.date_bagged ? `<span>🛍️ Bagged: ${new Date(c.date_bagged).toLocaleDateString()}</span>` : ''}
-                ${c.date_pollinated ? `<span>🌸 Pollinated: ${new Date(c.date_pollinated).toLocaleDateString()}</span>` : ''}
-                ${c.date_unbagged ? `<span>✂️ Unbagged: ${new Date(c.date_unbagged).toLocaleDateString()}</span>` : ''}
-              </div>
-              ${c.fruit_set ? '<div style="font-size:0.85rem;margin-top:4px;">🍅 Fruit set confirmed</div>' : ''}
-              ${c.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${c.notes}</div>` : ''}
-            </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-              <span style="font-weight:700;color:${statusColor};">${statusText}</span>
-              <div style="display:flex;gap:4px;">
-                <button class="btn btn-secondary btn-sm" onclick="showUpdateCross(${c.id})">✏️ Update</button>
-                <button class="btn btn-danger btn-sm" onclick="deleteCross(${c.id})">🗑️</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('')}
-  `;
-}
-
-function showAddCross() {
-  openModal('Log Cross Pollination', `
-    <div class="alert alert-info">Log a hand pollination attempt between two plants.</div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Mother Plant (receives pollen) *</label>
-        <select class="form-control" id="f-mother">
-          <option value="">Select plant...</option>
-          ${state.plants.map(p => `<option value="${p.designation}">${p.designation} — ${p.variety_name || ''}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group"><label class="form-label">Father Plant (donates pollen)</label>
-        <select class="form-control" id="f-father">
-          <option value="">Select plant...</option>
-          ${state.plants.map(p => `<option value="${p.designation}">${p.designation} — ${p.variety_name || ''}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-    <div class="form-group"><label class="form-label">Breeding Project</label>
-      <select class="form-control" id="f-project">
-        <option value="">None</option>
-        ${state.projects.filter(p => p.status === 'active').map(p => `<option value="${p.code}">${p.name} (${p.code})</option>`).join('')}
-      </select>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Date Bagged</label><input class="form-control" id="f-bagged" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
-      <div class="form-group"><label class="form-label">Date Pollinated</label><input class="form-control" id="f-pollinated" type="date"></div>
-    </div>
-    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2" placeholder="Flower condition, pollen viability, method used..."></textarea></div>
-    <div class="form-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitCross()">Log Cross</button>
-    </div>
-  `);
-}
-
-function showUpdateCross(id) {
-  const c = state.crosses.find(x => x.id === id);
-  openModal('Update Cross — ' + c.mother_designation + ' × ' + (c.father_designation || '?'), `
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Date Pollinated</label><input class="form-control" id="f-pollinated" type="date" value="${c.date_pollinated ? c.date_pollinated.split('T')[0] : ''}"></div>
-      <div class="form-group"><label class="form-label">Date Unbagged</label><input class="form-control" id="f-unbagged" type="date" value="${c.date_unbagged ? c.date_unbagged.split('T')[0] : ''}"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Fruit Set?</label>
-        <select class="form-control" id="f-fruitset">
-          <option value="false" ${!c.fruit_set ? 'selected' : ''}>No</option>
-          <option value="true" ${c.fruit_set ? 'selected' : ''}>Yes 🍅</option>
-        </select>
-      </div>
-      <div class="form-group"><label class="form-label">Result</label>
-        <select class="form-control" id="f-success">
-          <option value="" ${c.success === null ? 'selected' : ''}>Pending</option>
-          <option value="true" ${c.success === true ? 'selected' : ''}>Success ✅</option>
-          <option value="false" ${c.success === false ? 'selected' : ''}>Failed ❌</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2">${c.notes || ''}</textarea></div>
-    <div class="form-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitUpdateCross(${id})">Save Update</button>
-    </div>
-  `);
-}
-
-async function submitCross() {
-  const mother_designation = document.getElementById('f-mother').value;
-  if (!mother_designation) return alert('Mother plant is required');
-  await api('/api/crosses', 'POST', { mother_designation, father_designation: document.getElementById('f-father').value || null, project_code: document.getElementById('f-project').value || null, date_bagged: document.getElementById('f-bagged').value || null, date_pollinated: document.getElementById('f-pollinated').value || null, notes: document.getElementById('f-notes').value });
-  closeModal(); await loadAll(); render();
-}
-
-async function submitUpdateCross(id) {
-  const successVal = document.getElementById('f-success').value;
-  await api('/api/crosses/' + id, 'PUT', { date_pollinated: document.getElementById('f-pollinated').value || null, date_unbagged: document.getElementById('f-unbagged').value || null, fruit_set: document.getElementById('f-fruitset').value === 'true', success: successVal === '' ? null : successVal === 'true', notes: document.getElementById('f-notes').value });
-  closeModal(); await loadAll(); render();
-}
-
-async function deleteCross(id) {
-  if (!confirm('Delete this cross pollination record? This cannot be undone.')) return;
-  await api('/api/crosses/' + id, 'DELETE'); await loadAll(); render();
-}
-
-// FRUIT OBSERVATIONS
-function renderObservations() {
-  return `
-    <div class="page-header"><h1 class="page-title">🔍 Fruit Observations</h1><button class="btn btn-primary" onclick="showAddObservation()">+ Add Observation</button></div>
-    ${state.observations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>No fruit observations yet.</p></div></div>`
-    : state.observations.map(o => `
+    <div class="page-header"><h1 class="page-title">🌿 Amendments & Fertilizer</h1><button class="btn btn-primary" onclick="showAddAmendment()">+ Log Amendment</button></div>
+    ${state.amendments.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🌿</div><p>No amendments logged yet. Use the 🌿 Amend button on a plant or location.</p></div></div>`
+    : state.amendments.map(a => `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
           <div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-              <span class="designation" style="font-size:0.8rem;">${o.plant_designation}</span>
-              ${o.variety_name ? `<span style="font-size:0.85rem;color:var(--text-muted);">${o.variety_name}</span>` : ''}
-              <span style="font-size:0.85rem;color:var(--text-muted);">${new Date(o.observation_date).toLocaleDateString()}</span>
+              <span class="tag tag-active">${a.type}</span>
+              ${a.product_name ? `<strong>${a.product_name}</strong>` : ''}
+              <span style="font-size:0.85rem;color:var(--text-muted);">${new Date(a.amendment_date).toLocaleDateString()}</span>
             </div>
-            <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;">
-              ${o.fruit_count !== null ? `<span>🍅 Count: <strong>${o.fruit_count}</strong></span>` : ''}
-              ${o.avg_length_inches ? `<span>📏 Length: <strong>${o.avg_length_inches}"</strong></span>` : ''}
-              ${o.avg_diameter_inches ? `<span>⭕ Diameter: <strong>${o.avg_diameter_inches}"</strong></span>` : ''}
-              ${o.color ? `<span>🎨 Color: <strong>${o.color}</strong></span>` : ''}
-              ${o.texture ? `<span>✋ Texture: <strong>${o.texture}</strong></span>` : ''}
+            <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-muted);">
+              ${a.plant_designation ? `<span>🪴 ${a.plant_designation}</span>` : ''}
+              ${a.location_name ? `<span>📍 ${a.location_name}</span>` : ''}
+              ${a.amount ? `<span>📏 ${a.amount}</span>` : ''}
+              ${a.method ? `<span>🔧 ${a.method}</span>` : ''}
             </div>
-            ${o.flavor_notes ? `<div style="font-size:0.85rem;margin-top:6px;">😋 <em>${o.flavor_notes}</em></div>` : ''}
-            ${o.health_notes ? `<div style="font-size:0.85rem;margin-top:4px;color:#f59e0b;">⚕️ ${o.health_notes}</div>` : ''}
-            ${o.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${o.notes}</div>` : ''}
+            ${a.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${a.notes}</div>` : ''}
           </div>
           <div style="display:flex;gap:4px;">
-            <button class="btn btn-secondary btn-sm" onclick="showEditObservation(${o.id})">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteObservation(${o.id})">🗑️</button>
+            <button class="btn btn-secondary btn-sm" onclick="showEditAmendment(${a.id})">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteAmendment(${a.id})">🗑️</button>
           </div>
         </div>
       </div>
@@ -837,53 +975,69 @@ function renderObservations() {
   `;
 }
 
-function observationForm(o) {
+function amendmentForm(a, preselectedPlant = '') {
+  const types = ['Fertilizer', 'Amendment', 'Pesticide', 'Fungicide', 'Herbicide', 'Other'];
+  const methods = ['Top dress', 'Side dress', 'Soil drench', 'Foliar spray', 'Mixed into soil', 'Other'];
   return `
-    <div class="form-group"><label class="form-label">Plant *</label>
-      <select class="form-control" id="f-plant" ${o ? 'disabled' : ''}>
-        <option value="">Select plant...</option>
-        ${state.plants.map(p => `<option value="${p.designation}" ${o && o.plant_designation === p.designation ? 'selected' : ''}>${p.designation} — ${p.variety_name || ''}</option>`).join('')}
-      </select>
-    </div>
-    <div class="form-group"><label class="form-label">Observation Date *</label><input class="form-control" id="f-obsdate" type="date" value="${o && o.observation_date ? o.observation_date.split('T')[0] : new Date().toISOString().split('T')[0]}"></div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Fruit Count</label><input class="form-control" id="f-count" type="number" min="0" value="${o ? o.fruit_count || '' : ''}"></div>
-      <div class="form-group"><label class="form-label">Color</label><input class="form-control" id="f-color" value="${o ? o.color || '' : ''}" placeholder="e.g. Dark green"></div>
+      <div class="form-group"><label class="form-label">Apply to Plant</label>
+        <select class="form-control" id="f-aplant">
+          <option value="">No specific plant</option>
+          ${state.plants.filter(p => p.season_year === new Date().getFullYear()).map(p => `<option value="${p.designation}" ${(a && a.plant_designation === p.designation) || preselectedPlant === p.designation ? 'selected' : ''}>${p.designation} — ${p.variety_name || ''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Apply to Location</label>
+        <select class="form-control" id="f-alocation">
+          <option value="">No specific location</option>
+          ${state.locations.filter(l => l.active).map(l => `<option value="${l.id}" ${a && a.location_id === l.id ? 'selected' : ''}>${l.name}</option>`).join('')}
+        </select>
+      </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Avg Length (inches)</label><input class="form-control" id="f-length" type="number" step="0.1" value="${o ? o.avg_length_inches || '' : ''}"></div>
-      <div class="form-group"><label class="form-label">Avg Diameter (inches)</label><input class="form-control" id="f-diameter" type="number" step="0.1" value="${o ? o.avg_diameter_inches || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Date *</label><input class="form-control" id="f-adate" type="date" value="${a && a.amendment_date ? a.amendment_date.split('T')[0] : new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group"><label class="form-label">Type *</label>
+        <select class="form-control" id="f-atype">
+          ${types.map(t => `<option value="${t}" ${a && a.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </div>
     </div>
-    <div class="form-group"><label class="form-label">Texture Notes</label><input class="form-control" id="f-texture" value="${o ? o.texture || '' : ''}" placeholder="e.g. Firm, bumpy, smooth"></div>
-    <div class="form-group"><label class="form-label">Flavor Notes</label><textarea class="form-control" id="f-flavor" rows="2">${o ? o.flavor_notes || '' : ''}</textarea></div>
-    <div class="form-group"><label class="form-label">Health / Disease Notes</label><textarea class="form-control" id="f-health" rows="2">${o ? o.health_notes || '' : ''}</textarea></div>
-    <div class="form-group"><label class="form-label">General Notes</label><textarea class="form-control" id="f-notes" rows="2">${o ? o.notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Product Name</label><input class="form-control" id="f-aproduct" value="${a ? a.product_name || '' : ''}" placeholder="e.g. Tomato-tone, Miracle-Gro, Lime"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Amount / Rate</label><input class="form-control" id="f-aamount" value="${a ? a.amount || '' : ''}" placeholder="e.g. 1 tbsp per gallon, 1 cup per plant"></div>
+      <div class="form-group"><label class="form-label">Method</label>
+        <select class="form-control" id="f-amethod">
+          <option value="">Select...</option>
+          ${methods.map(m => `<option value="${m}" ${a && a.method === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-anotes" rows="2">${a ? a.notes || '' : ''}</textarea></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="${o ? `submitEditObservation(${o.id})` : 'submitObservation()'}">${o ? 'Save Changes' : 'Save Observation'}</button>
+      <button class="btn btn-primary" onclick="${a ? `submitEditAmendment(${a.id})` : 'submitAmendment()'}">${a ? 'Save Changes' : 'Log Amendment'}</button>
     </div>
   `;
 }
 
-function showAddObservation() { openModal('Add Fruit Observation', observationForm(null)); }
-function showEditObservation(id) { openModal('Edit Observation', observationForm(state.observations.find(x => x.id === id))); }
+function showAddAmendment(preselectedPlant = '') { openModal('Log Amendment / Fertilizer', amendmentForm(null, preselectedPlant)); }
+function showEditAmendment(id) { openModal('Edit Amendment', amendmentForm(state.amendments.find(x => x.id === id))); }
 
-async function submitObservation() {
-  const plant_designation = document.getElementById('f-plant').value;
-  const observation_date = document.getElementById('f-obsdate').value;
-  if (!plant_designation || !observation_date) return alert('Plant and date are required');
-  await api('/api/observations', 'POST', { plant_designation, observation_date, fruit_count: document.getElementById('f-count').value || null, color: document.getElementById('f-color').value, avg_length_inches: document.getElementById('f-length').value || null, avg_diameter_inches: document.getElementById('f-diameter').value || null, texture: document.getElementById('f-texture').value, flavor_notes: document.getElementById('f-flavor').value, health_notes: document.getElementById('f-health').value, notes: document.getElementById('f-notes').value });
+async function submitAmendment() {
+  const amendment_date = document.getElementById('f-adate').value;
+  const type = document.getElementById('f-atype').value;
+  if (!amendment_date || !type) return alert('Date and type are required');
+  await api('/api/amendments', 'POST', { plant_designation: document.getElementById('f-aplant').value || null, location_id: document.getElementById('f-alocation').value || null, amendment_date, type, product_name: document.getElementById('f-aproduct').value, amount: document.getElementById('f-aamount').value, method: document.getElementById('f-amethod').value, notes: document.getElementById('f-anotes').value });
   closeModal(); await loadAll(); render();
 }
 
-async function submitEditObservation(id) {
-  await api('/api/observations/' + id, 'PUT', { observation_date: document.getElementById('f-obsdate').value, fruit_count: document.getElementById('f-count').value || null, color: document.getElementById('f-color').value, avg_length_inches: document.getElementById('f-length').value || null, avg_diameter_inches: document.getElementById('f-diameter').value || null, texture: document.getElementById('f-texture').value, flavor_notes: document.getElementById('f-flavor').value, health_notes: document.getElementById('f-health').value, notes: document.getElementById('f-notes').value });
+async function submitEditAmendment(id) {
+  await api('/api/amendments/' + id, 'PUT', { amendment_date: document.getElementById('f-adate').value, type: document.getElementById('f-atype').value, product_name: document.getElementById('f-aproduct').value, amount: document.getElementById('f-aamount').value, method: document.getElementById('f-amethod').value, notes: document.getElementById('f-anotes').value });
   closeModal(); await loadAll(); render();
 }
 
-async function deleteObservation(id) {
-  if (!confirm('Delete this observation? This cannot be undone.')) return;
-  await api('/api/observations/' + id, 'DELETE'); await loadAll(); render();
+async function deleteAmendment(id) {
+  if (!confirm('Delete this amendment record? This cannot be undone.')) return;
+  await api('/api/amendments/' + id, 'DELETE'); await loadAll(); render();
 }
 
 function renderHarvest() {
@@ -1100,6 +1254,7 @@ function renderLocations() {
     ${state.locations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">📍</div><p>No garden locations yet.</p></div></div>`
     : state.locations.map(loc => {
       const plants = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear());
+      const locAmendments = state.amendments.filter(a => a.location_id === loc.id).slice(0, 3);
       return `
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
@@ -1114,7 +1269,8 @@ function renderLocations() {
               ${loc.soil_notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">🌱 ${loc.soil_notes}</div>` : ''}
               ${loc.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${loc.notes}</div>` : ''}
             </div>
-            <div style="display:flex;gap:6px;">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="btn btn-primary btn-sm" onclick="showAddAmendmentLocation(${loc.id})">🌿 Amend</button>
               <button class="btn btn-secondary btn-sm" onclick="showEditLocation(${loc.id})">✏️ Edit</button>
               <button class="btn btn-danger btn-sm" onclick="deleteLocation(${loc.id})">🗑️</button>
             </div>
@@ -1124,10 +1280,23 @@ function renderLocations() {
             ${plants.length === 0 ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants assigned yet.</p>'
             : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${plants.map(p => `<span class="designation" style="font-size:0.75rem;">${p.designation}</span>`).join('')}</div>`}
           </div>
+          ${locAmendments.length > 0 ? `
+          <div style="margin-top:12px;">
+            <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:6px;">Recent amendments:</div>
+            ${locAmendments.map(a => `<div style="font-size:0.8rem;color:var(--text-muted);">${new Date(a.amendment_date).toLocaleDateString()} — ${a.type}${a.product_name ? ': ' + a.product_name : ''}</div>`).join('')}
+          </div>` : ''}
         </div>
       `;
     }).join('')}
   `;
+}
+
+function showAddAmendmentLocation(locationId) {
+  openModal('Log Amendment for Location', amendmentForm(null, ''));
+  setTimeout(() => {
+    const sel = document.getElementById('f-alocation');
+    if (sel) sel.value = locationId;
+  }, 50);
 }
 
 function locationForm(loc) {
@@ -1187,6 +1356,211 @@ async function submitEditLocation(id) {
 async function deleteLocation(id) {
   if (!confirm('Delete this location? This cannot be undone.')) return;
   await api('/api/locations/' + id, 'DELETE'); await loadAll(); render();
+}
+
+function renderCrosses() {
+  return `
+    <div class="page-header"><h1 class="page-title">🌸 Cross Pollination</h1><button class="btn btn-primary" onclick="showAddCross()">+ Log Cross</button></div>
+    ${state.crosses.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🌸</div><p>No cross pollinations logged yet.</p></div></div>`
+    : state.crosses.map(c => {
+      const statusColor = c.success === true ? '#22c55e' : c.success === false ? '#ef4444' : '#f59e0b';
+      const statusText = c.success === true ? '✅ Success' : c.success === false ? '❌ Failed' : '⏳ Pending';
+      return `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+                <span class="designation" style="font-size:0.8rem;">${c.mother_designation}</span>
+                <span style="font-size:1.2rem;">×</span>
+                <span class="designation" style="font-size:0.8rem;">${c.father_designation || '?'}</span>
+                ${c.project_code ? `<span class="tag tag-active">${c.project_code}</span>` : ''}
+              </div>
+              <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-muted);">
+                ${c.date_bagged ? `<span>🛍️ Bagged: ${new Date(c.date_bagged).toLocaleDateString()}</span>` : ''}
+                ${c.date_pollinated ? `<span>🌸 Pollinated: ${new Date(c.date_pollinated).toLocaleDateString()}</span>` : ''}
+                ${c.date_unbagged ? `<span>✂️ Unbagged: ${new Date(c.date_unbagged).toLocaleDateString()}</span>` : ''}
+              </div>
+              ${c.fruit_set ? '<div style="font-size:0.85rem;margin-top:4px;">🍅 Fruit set confirmed</div>' : ''}
+              ${c.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${c.notes}</div>` : ''}
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+              <span style="font-weight:700;color:${statusColor};">${statusText}</span>
+              <div style="display:flex;gap:4px;">
+                <button class="btn btn-secondary btn-sm" onclick="showUpdateCross(${c.id})">✏️ Update</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteCross(${c.id})">🗑️</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+function showAddCross() {
+  openModal('Log Cross Pollination', `
+    <div class="alert alert-info">Log a hand pollination attempt between two plants.</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Mother Plant (receives pollen) *</label>
+        <select class="form-control" id="f-mother">
+          <option value="">Select plant...</option>
+          ${state.plants.map(p => `<option value="${p.designation}">${p.designation} — ${p.variety_name || ''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Father Plant (donates pollen)</label>
+        <select class="form-control" id="f-father">
+          <option value="">Select plant...</option>
+          ${state.plants.map(p => `<option value="${p.designation}">${p.designation} — ${p.variety_name || ''}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Breeding Project</label>
+      <select class="form-control" id="f-project">
+        <option value="">None</option>
+        ${state.projects.filter(p => p.status === 'active').map(p => `<option value="${p.code}">${p.name} (${p.code})</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date Bagged</label><input class="form-control" id="f-bagged" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group"><label class="form-label">Date Pollinated</label><input class="form-control" id="f-pollinated" type="date"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2"></textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitCross()">Log Cross</button>
+    </div>
+  `);
+}
+
+function showUpdateCross(id) {
+  const c = state.crosses.find(x => x.id === id);
+  openModal('Update Cross — ' + c.mother_designation + ' × ' + (c.father_designation || '?'), `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date Pollinated</label><input class="form-control" id="f-pollinated" type="date" value="${c.date_pollinated ? c.date_pollinated.split('T')[0] : ''}"></div>
+      <div class="form-group"><label class="form-label">Date Unbagged</label><input class="form-control" id="f-unbagged" type="date" value="${c.date_unbagged ? c.date_unbagged.split('T')[0] : ''}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Fruit Set?</label>
+        <select class="form-control" id="f-fruitset">
+          <option value="false" ${!c.fruit_set ? 'selected' : ''}>No</option>
+          <option value="true" ${c.fruit_set ? 'selected' : ''}>Yes 🍅</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Result</label>
+        <select class="form-control" id="f-success">
+          <option value="" ${c.success === null ? 'selected' : ''}>Pending</option>
+          <option value="true" ${c.success === true ? 'selected' : ''}>Success ✅</option>
+          <option value="false" ${c.success === false ? 'selected' : ''}>Failed ❌</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2">${c.notes || ''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitUpdateCross(${id})">Save Update</button>
+    </div>
+  `);
+}
+
+async function submitCross() {
+  const mother_designation = document.getElementById('f-mother').value;
+  if (!mother_designation) return alert('Mother plant is required');
+  await api('/api/crosses', 'POST', { mother_designation, father_designation: document.getElementById('f-father').value || null, project_code: document.getElementById('f-project').value || null, date_bagged: document.getElementById('f-bagged').value || null, date_pollinated: document.getElementById('f-pollinated').value || null, notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitUpdateCross(id) {
+  const successVal = document.getElementById('f-success').value;
+  await api('/api/crosses/' + id, 'PUT', { date_pollinated: document.getElementById('f-pollinated').value || null, date_unbagged: document.getElementById('f-unbagged').value || null, fruit_set: document.getElementById('f-fruitset').value === 'true', success: successVal === '' ? null : successVal === 'true', notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteCross(id) {
+  if (!confirm('Delete this cross pollination record? This cannot be undone.')) return;
+  await api('/api/crosses/' + id, 'DELETE'); await loadAll(); render();
+}
+
+function renderObservations() {
+  return `
+    <div class="page-header"><h1 class="page-title">🔍 Fruit Observations</h1><button class="btn btn-primary" onclick="showAddObservation()">+ Add Observation</button></div>
+    ${state.observations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>No fruit observations yet.</p></div></div>`
+    : state.observations.map(o => `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+              <span class="designation" style="font-size:0.8rem;">${o.plant_designation}</span>
+              ${o.variety_name ? `<span style="font-size:0.85rem;color:var(--text-muted);">${o.variety_name}</span>` : ''}
+              <span style="font-size:0.85rem;color:var(--text-muted);">${new Date(o.observation_date).toLocaleDateString()}</span>
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;">
+              ${o.fruit_count !== null ? `<span>🍅 Count: <strong>${o.fruit_count}</strong></span>` : ''}
+              ${o.avg_length_inches ? `<span>📏 Length: <strong>${o.avg_length_inches}"</strong></span>` : ''}
+              ${o.avg_diameter_inches ? `<span>⭕ Diameter: <strong>${o.avg_diameter_inches}"</strong></span>` : ''}
+              ${o.color ? `<span>🎨 Color: <strong>${o.color}</strong></span>` : ''}
+              ${o.texture ? `<span>✋ Texture: <strong>${o.texture}</strong></span>` : ''}
+            </div>
+            ${o.flavor_notes ? `<div style="font-size:0.85rem;margin-top:6px;">😋 <em>${o.flavor_notes}</em></div>` : ''}
+            ${o.health_notes ? `<div style="font-size:0.85rem;margin-top:4px;color:#f59e0b;">⚕️ ${o.health_notes}</div>` : ''}
+            ${o.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${o.notes}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-secondary btn-sm" onclick="showEditObservation(${o.id})">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteObservation(${o.id})">🗑️</button>
+          </div>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function observationForm(o) {
+  return `
+    <div class="form-group"><label class="form-label">Plant *</label>
+      <select class="form-control" id="f-plant" ${o ? 'disabled' : ''}>
+        <option value="">Select plant...</option>
+        ${state.plants.map(p => `<option value="${p.designation}" ${o && o.plant_designation === p.designation ? 'selected' : ''}>${p.designation} — ${p.variety_name || ''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Observation Date *</label><input class="form-control" id="f-obsdate" type="date" value="${o && o.observation_date ? o.observation_date.split('T')[0] : new Date().toISOString().split('T')[0]}"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Fruit Count</label><input class="form-control" id="f-count" type="number" min="0" value="${o ? o.fruit_count || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Color</label><input class="form-control" id="f-color" value="${o ? o.color || '' : ''}" placeholder="e.g. Dark green"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Avg Length (inches)</label><input class="form-control" id="f-length" type="number" step="0.1" value="${o ? o.avg_length_inches || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Avg Diameter (inches)</label><input class="form-control" id="f-diameter" type="number" step="0.1" value="${o ? o.avg_diameter_inches || '' : ''}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Texture Notes</label><input class="form-control" id="f-texture" value="${o ? o.texture || '' : ''}" placeholder="e.g. Firm, bumpy, smooth"></div>
+    <div class="form-group"><label class="form-label">Flavor Notes</label><textarea class="form-control" id="f-flavor" rows="2">${o ? o.flavor_notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Health / Disease Notes</label><textarea class="form-control" id="f-health" rows="2">${o ? o.health_notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">General Notes</label><textarea class="form-control" id="f-notes" rows="2">${o ? o.notes || '' : ''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="${o ? `submitEditObservation(${o.id})` : 'submitObservation()'}">${o ? 'Save Changes' : 'Save Observation'}</button>
+    </div>
+  `;
+}
+
+function showAddObservation() { openModal('Add Fruit Observation', observationForm(null)); }
+function showEditObservation(id) { openModal('Edit Observation', observationForm(state.observations.find(x => x.id === id))); }
+
+async function submitObservation() {
+  const plant_designation = document.getElementById('f-plant').value;
+  const observation_date = document.getElementById('f-obsdate').value;
+  if (!plant_designation || !observation_date) return alert('Plant and date are required');
+  await api('/api/observations', 'POST', { plant_designation, observation_date, fruit_count: document.getElementById('f-count').value || null, color: document.getElementById('f-color').value, avg_length_inches: document.getElementById('f-length').value || null, avg_diameter_inches: document.getElementById('f-diameter').value || null, texture: document.getElementById('f-texture').value, flavor_notes: document.getElementById('f-flavor').value, health_notes: document.getElementById('f-health').value, notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitEditObservation(id) {
+  await api('/api/observations/' + id, 'PUT', { observation_date: document.getElementById('f-obsdate').value, fruit_count: document.getElementById('f-count').value || null, color: document.getElementById('f-color').value, avg_length_inches: document.getElementById('f-length').value || null, avg_diameter_inches: document.getElementById('f-diameter').value || null, texture: document.getElementById('f-texture').value, flavor_notes: document.getElementById('f-flavor').value, health_notes: document.getElementById('f-health').value, notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteObservation(id) {
+  if (!confirm('Delete this observation? This cannot be undone.')) return;
+  await api('/api/observations/' + id, 'DELETE'); await loadAll(); render();
 }
 
 function renderProjects() {

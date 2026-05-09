@@ -120,6 +120,8 @@ async function initDB() {
         generation INTEGER NOT NULL DEFAULT 1,
         year_saved INTEGER NOT NULL,
         quantity_estimate INTEGER,
+        quantity_weight DECIMAL(8,2),
+        quantity_unit VARCHAR(10) DEFAULT 'seeds',
         mother_designation VARCHAR(50),
         father_designation VARCHAR(50),
         notes TEXT,
@@ -128,6 +130,21 @@ async function initDB() {
         last_tested DATE,
         packet_front_path VARCHAR(255),
         packet_back_path VARCHAR(255),
+        lot_number VARCHAR(50),
+        upc_code VARCHAR(50),
+        packed_for_year INTEGER,
+        days_to_germination INTEGER,
+        days_to_harvest INTEGER,
+        planting_depth_inches DECIMAL(4,2),
+        spacing_inches INTEGER,
+        row_spacing_inches INTEGER,
+        sun_requirements VARCHAR(50),
+        watering_needs VARCHAR(20),
+        container_variety BOOLEAN DEFAULT FALSE,
+        direct_sow BOOLEAN DEFAULT TRUE,
+        start_indoors_weeks INTEGER,
+        soil_temp_min_f INTEGER,
+        frost_tolerance VARCHAR(50),
         created_at TIMESTAMP DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS garden_locations (
@@ -227,14 +244,43 @@ async function initDB() {
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS plant_amendments (
+        id SERIAL PRIMARY KEY,
+        plant_designation VARCHAR(50) REFERENCES plants(designation),
+        location_id INTEGER REFERENCES garden_locations(id),
+        amendment_date DATE NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        product_name VARCHAR(100),
+        amount VARCHAR(50),
+        method VARCHAR(50),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
       INSERT INTO species (code, name) VALUES
-        ('CUC', 'Cucumber'),('TOM', 'Tomato'),('PEP', 'Pepper')
+        ('CUC', 'Cucumber'),('TOM', 'Tomato'),('PEP', 'Pepper'),('CAR', 'Carrot')
       ON CONFLICT (code) DO NOTHING;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'standard';
       ALTER TABLE plants ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES garden_locations(id);
       ALTER TABLE plants ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255);
       ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS packet_front_path VARCHAR(255);
       ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS packet_back_path VARCHAR(255);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS quantity_weight DECIMAL(8,2);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS quantity_unit VARCHAR(10) DEFAULT 'seeds';
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS lot_number VARCHAR(50);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS upc_code VARCHAR(50);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS packed_for_year INTEGER;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS days_to_germination INTEGER;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS days_to_harvest INTEGER;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS planting_depth_inches DECIMAL(4,2);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS spacing_inches INTEGER;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS row_spacing_inches INTEGER;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS sun_requirements VARCHAR(50);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS watering_needs VARCHAR(20);
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS container_variety BOOLEAN DEFAULT FALSE;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS direct_sow BOOLEAN DEFAULT TRUE;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS start_indoors_weeks INTEGER;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS soil_temp_min_f INTEGER;
+      ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS frost_tolerance VARCHAR(50);
     `);
     console.log('Database initialized successfully');
   } finally { client.release(); }
@@ -361,10 +407,7 @@ app.delete('/api/plants/:designation/photo', authMiddleware, async (req, res) =>
   try {
     const result = await pool.query('SELECT photo_path FROM plants WHERE designation=$1', [designation]);
     const photoPath = result.rows[0]?.photo_path;
-    if (photoPath) {
-      const fullPath = '/app' + photoPath;
-      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-    }
+    if (photoPath) { const fullPath = '/app' + photoPath; if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath); }
     await pool.query('UPDATE plants SET photo_path=NULL WHERE designation=$1', [designation]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
@@ -380,10 +423,7 @@ app.post('/api/seed-lots/:designation/packet/:side', authMiddleware, (req, res) 
     const photoPath = '/uploads/packets/' + req.file.filename;
     try {
       const old = await pool.query('SELECT ' + col + ' FROM seed_lots WHERE designation=$1', [designation]);
-      if (old.rows[0]?.[col]) {
-        const oldFile = '/app' + old.rows[0][col];
-        if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
-      }
+      if (old.rows[0]?.[col]) { const oldFile = '/app' + old.rows[0][col]; if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile); }
       await pool.query('UPDATE seed_lots SET ' + col + '=$1 WHERE designation=$2', [photoPath, designation]);
       res.json({ success: true, photo_path: photoPath });
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
@@ -397,10 +437,7 @@ app.delete('/api/seed-lots/:designation/packet/:side', authMiddleware, async (re
   try {
     const result = await pool.query('SELECT ' + col + ' FROM seed_lots WHERE designation=$1', [designation]);
     const photoPath = result.rows[0]?.[col];
-    if (photoPath) {
-      const fullPath = '/app' + photoPath;
-      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-    }
+    if (photoPath) { const fullPath = '/app' + photoPath; if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath); }
     await pool.query('UPDATE seed_lots SET ' + col + '=NULL WHERE designation=$1', [designation]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
@@ -408,6 +445,31 @@ app.delete('/api/seed-lots/:designation/packet/:side', authMiddleware, async (re
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 app.use(express.static(path.join(__dirname, 'public')));
+
+// AMENDMENTS
+app.get('/api/amendments', authMiddleware, async (req, res) => {
+  try { res.json((await pool.query('SELECT a.*, p.seed_lot_designation, v.name as variety_name, gl.name as location_name FROM plant_amendments a LEFT JOIN plants p ON a.plant_designation = p.designation LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code LEFT JOIN garden_locations gl ON a.location_id = gl.id ORDER BY a.amendment_date DESC')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.post('/api/amendments', authMiddleware, async (req, res) => {
+  const amendment_date = sanitizeString(req.body.amendment_date, 20);
+  const type = sanitizeString(req.body.type, 50);
+  if (!amendment_date || !type) return res.status(400).json({ error: 'Date and type required' });
+  try { res.json((await pool.query('INSERT INTO plant_amendments (plant_designation, location_id, amendment_date, type, product_name, amount, method, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *', [sanitizeString(req.body.plant_designation, 50) || null, validateInt(req.body.location_id, 1) || null, amendment_date, type, sanitizeString(req.body.product_name, 100), sanitizeString(req.body.amount, 50), sanitizeString(req.body.method, 50), sanitizeString(req.body.notes, 2000)])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.put('/api/amendments/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { res.json((await pool.query('UPDATE plant_amendments SET amendment_date=$1, type=$2, product_name=$3, amount=$4, method=$5, notes=$6 WHERE id=$7 RETURNING *', [sanitizeString(req.body.amendment_date, 20), sanitizeString(req.body.type, 50), sanitizeString(req.body.product_name, 100), sanitizeString(req.body.amount, 50), sanitizeString(req.body.method, 50), sanitizeString(req.body.notes, 2000), id])).rows[0]); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+app.delete('/api/amendments/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { await pool.query('DELETE FROM plant_amendments WHERE id=$1', [id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
 
 // GARDEN LOCATIONS
 app.get('/api/locations', authMiddleware, async (req, res) => {
@@ -528,12 +590,80 @@ app.post('/api/seed-lots', authMiddleware, async (req, res) => {
   const generation = validateInt(req.body.generation, 1, 100);
   const year_saved = validateYear(req.body.year_saved);
   if (!variety_code || !generation || !year_saved) return res.status(400).json({ error: 'Variety, generation and year required' });
-  try { res.json((await pool.query('INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', [variety_code + '-G' + generation + '-' + year_saved, variety_code, generation, year_saved, validateInt(req.body.quantity_estimate, 0, 100000), sanitizeString(req.body.mother_designation, 50), sanitizeString(req.body.father_designation, 50), sanitizeString(req.body.notes, 2000), sanitizeString(req.body.storage_location, 100)])).rows[0]); }
-  catch (err) { res.status(500).json({ error: 'Server error' }); }
+  try {
+    const designation = variety_code + '-G' + generation + '-' + year_saved;
+    res.json((await pool.query(`INSERT INTO seed_lots (designation, variety_code, generation, year_saved,
+      quantity_estimate, quantity_weight, quantity_unit,
+      mother_designation, father_designation, notes, storage_location,
+      lot_number, upc_code, packed_for_year,
+      days_to_germination, days_to_harvest, planting_depth_inches,
+      spacing_inches, row_spacing_inches, sun_requirements, watering_needs,
+      container_variety, direct_sow, start_indoors_weeks, soil_temp_min_f, frost_tolerance)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
+      [designation, variety_code, generation, year_saved,
+      validateInt(req.body.quantity_estimate, 0, 100000),
+      validateDecimal(req.body.quantity_weight),
+      sanitizeString(req.body.quantity_unit, 10) || 'seeds',
+      sanitizeString(req.body.mother_designation, 50),
+      sanitizeString(req.body.father_designation, 50),
+      sanitizeString(req.body.notes, 2000),
+      sanitizeString(req.body.storage_location, 100),
+      sanitizeString(req.body.lot_number, 50),
+      sanitizeString(req.body.upc_code, 50),
+      validateYear(req.body.packed_for_year),
+      validateInt(req.body.days_to_germination, 1, 365),
+      validateInt(req.body.days_to_harvest, 1, 365),
+      validateDecimal(req.body.planting_depth_inches),
+      validateInt(req.body.spacing_inches, 1, 999),
+      validateInt(req.body.row_spacing_inches, 1, 999),
+      sanitizeString(req.body.sun_requirements, 50),
+      sanitizeString(req.body.watering_needs, 20),
+      req.body.container_variety === true || req.body.container_variety === 'true',
+      req.body.direct_sow !== false && req.body.direct_sow !== 'false',
+      validateInt(req.body.start_indoors_weeks, 1, 20),
+      validateInt(req.body.soil_temp_min_f, 32, 100),
+      sanitizeString(req.body.frost_tolerance, 50)]
+    )).rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 app.put('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
   const designation = sanitizeString(req.params.designation, 50);
-  try { res.json((await pool.query('UPDATE seed_lots SET quantity_estimate=$1, notes=$2, storage_location=$3, germination_rate=$4, last_tested=$5, mother_designation=$6, father_designation=$7 WHERE designation=$8 RETURNING *', [validateInt(req.body.quantity_estimate, 0, 100000), sanitizeString(req.body.notes, 2000), sanitizeString(req.body.storage_location, 100), validateInt(req.body.germination_rate, 0, 100), sanitizeString(req.body.last_tested, 20) || null, sanitizeString(req.body.mother_designation, 50), sanitizeString(req.body.father_designation, 50), designation])).rows[0]); }
+  try { res.json((await pool.query(`UPDATE seed_lots SET
+      quantity_estimate=$1, quantity_weight=$2, quantity_unit=$3,
+      notes=$4, storage_location=$5, germination_rate=$6, last_tested=$7,
+      mother_designation=$8, father_designation=$9,
+      lot_number=$10, upc_code=$11, packed_for_year=$12,
+      days_to_germination=$13, days_to_harvest=$14, planting_depth_inches=$15,
+      spacing_inches=$16, row_spacing_inches=$17, sun_requirements=$18, watering_needs=$19,
+      container_variety=$20, direct_sow=$21, start_indoors_weeks=$22,
+      soil_temp_min_f=$23, frost_tolerance=$24
+      WHERE designation=$25 RETURNING *`,
+    [validateInt(req.body.quantity_estimate, 0, 100000),
+    validateDecimal(req.body.quantity_weight),
+    sanitizeString(req.body.quantity_unit, 10) || 'seeds',
+    sanitizeString(req.body.notes, 2000),
+    sanitizeString(req.body.storage_location, 100),
+    validateInt(req.body.germination_rate, 0, 100),
+    sanitizeString(req.body.last_tested, 20) || null,
+    sanitizeString(req.body.mother_designation, 50),
+    sanitizeString(req.body.father_designation, 50),
+    sanitizeString(req.body.lot_number, 50),
+    sanitizeString(req.body.upc_code, 50),
+    validateYear(req.body.packed_for_year),
+    validateInt(req.body.days_to_germination, 1, 365),
+    validateInt(req.body.days_to_harvest, 1, 365),
+    validateDecimal(req.body.planting_depth_inches),
+    validateInt(req.body.spacing_inches, 1, 999),
+    validateInt(req.body.row_spacing_inches, 1, 999),
+    sanitizeString(req.body.sun_requirements, 50),
+    sanitizeString(req.body.watering_needs, 20),
+    req.body.container_variety === true || req.body.container_variety === 'true',
+    req.body.direct_sow !== false && req.body.direct_sow !== 'false',
+    validateInt(req.body.start_indoors_weeks, 1, 20),
+    validateInt(req.body.soil_temp_min_f, 32, 100),
+    sanitizeString(req.body.frost_tolerance, 50),
+    designation]
+  )).rows[0]); }
   catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 app.delete('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
@@ -738,7 +868,7 @@ app.get('/api/viability', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT sl.*, v.name as variety_name, v.species_code FROM seed_lots sl LEFT JOIN varieties v ON sl.variety_code = v.code ORDER BY sl.designation');
     const currentYear = new Date().getFullYear();
-    const viabilityYears = { CUC: 5, TOM: 4, PEP: 3 };
+    const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3 };
     res.json(result.rows.map(lot => {
       const maxYears = viabilityYears[lot.species_code] || 3;
       const yearsLeft = maxYears - (currentYear - lot.year_saved);
@@ -780,7 +910,7 @@ app.get('/api/backup/export-csv', authMiddleware, async (req, res) => {
     res.setHeader('Content-Type', 'text/csv');
     res.send([
       '=== VARIETIES ===\n' + toCSV(varieties.rows, ['code','name','species_name','type','source','year_acquired','description']),
-      '=== SEED LOTS ===\n' + toCSV(seedLots.rows, ['designation','variety_name','generation','year_saved','quantity_estimate','storage_location','germination_rate','last_tested','notes']),
+      '=== SEED LOTS ===\n' + toCSV(seedLots.rows, ['designation','variety_name','generation','year_saved','quantity_estimate','quantity_weight','quantity_unit','storage_location','germination_rate','lot_number','packed_for_year','days_to_germination','days_to_harvest','spacing_inches','notes']),
       '=== PLANTS ===\n' + toCSV(plants.rows, ['designation','variety_name','seed_lot_designation','season_year','season_type','location_name','selected_for_seed','notes']),
       '=== HARVEST LOG ===\n' + toCSV(harvest.rows, ['plant_designation','variety_name','harvest_date','fruit_length_inches','fruit_diameter_inches','fruit_weight_oz','seed_count','condition','processing_method','notes']),
     ].join('\n\n'));
