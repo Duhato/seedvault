@@ -97,7 +97,8 @@ const state = {
   page: 'dashboard',
   varieties: [], seedLots: [], plants: [], projects: [],
   harvest: [], species: [], stats: {}, viability: [],
-  germination: [], users: [], locations: [], sources: []
+  germination: [], users: [], locations: [], sources: [],
+  crosses: [], observations: []
 };
 
 async function api(path, method = 'GET', body = null) {
@@ -112,6 +113,7 @@ async function loadAll() {
     api('/api/varieties'), api('/api/seed-lots'), api('/api/plants'), api('/api/projects'),
     api('/api/harvest'), api('/api/species'), api('/api/stats'), api('/api/viability'),
     api('/api/germination'), api('/api/locations'), api('/api/sources'),
+    api('/api/crosses'), api('/api/observations'),
   ];
   if (getRole() === 'admin') calls.push(api('/api/users'));
   const results = await Promise.all(calls);
@@ -126,7 +128,9 @@ async function loadAll() {
   state.germination = Array.isArray(results[8]) ? results[8] : [];
   state.locations = Array.isArray(results[9]) ? results[9] : [];
   state.sources = Array.isArray(results[10]) ? results[10] : [];
-  state.users = results[11] && Array.isArray(results[11]) ? results[11] : [];
+  state.crosses = Array.isArray(results[11]) ? results[11] : [];
+  state.observations = Array.isArray(results[12]) ? results[12] : [];
+  state.users = results[13] && Array.isArray(results[13]) ? results[13] : [];
 }
 
 function navigate(page) {
@@ -156,6 +160,8 @@ function render() {
     case 'projects': main.innerHTML = renderProjects(); break;
     case 'germination': main.innerHTML = renderGermination(); break;
     case 'locations': main.innerHTML = renderLocations(); break;
+    case 'crosses': main.innerHTML = renderCrosses(); break;
+    case 'observations': main.innerHTML = renderObservations(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
   }
 }
@@ -164,6 +170,7 @@ function renderDashboard() {
   const s = state.stats;
   const recentLots = [...state.seedLots].slice(0, 5);
   const selectedPlants = state.plants.filter(p => p.selected_for_seed);
+  const pendingCrosses = state.crosses.filter(c => c.success === null);
   return `
     <div class="page-header">
       <h1 class="page-title">🌱 SeedVault Dashboard</h1>
@@ -216,6 +223,22 @@ function renderDashboard() {
         </div>`}
       </div>
     </div>
+    ${pendingCrosses.length > 0 ? `
+    <div class="card" style="border-left:4px solid var(--green-mid);">
+      <div class="card-title">🌸 Pending Cross Pollinations</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${pendingCrosses.map(c => `
+          <div class="clickable-row" onclick="navigate('crosses')" style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+            <div>
+              <span class="designation" style="font-size:0.75rem;">${c.mother_designation}</span>
+              <span style="margin:0 6px;color:var(--text-muted);">×</span>
+              <span class="designation" style="font-size:0.75rem;">${c.father_designation || '?'}</span>
+            </div>
+            <span style="font-size:0.8rem;color:var(--text-muted);">${c.date_pollinated ? new Date(c.date_pollinated).toLocaleDateString() : 'Not yet pollinated'}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
     <div class="card">
       <div class="card-title">🧬 Active Breeding Projects</div>
       ${state.projects.filter(p => p.status === 'active').length === 0
@@ -548,37 +571,39 @@ async function deletePlant(designation) {
   await api('/api/plants/' + designation, 'DELETE'); await loadAll(); render();
 }
 
-// GARDEN LOCATIONS
-function renderLocations() {
+// CROSS POLLINATION
+function renderCrosses() {
   return `
-    <div class="page-header"><h1 class="page-title">📍 Garden Locations</h1><button class="btn btn-primary" onclick="showAddLocation()">+ Add Location</button></div>
-    ${state.locations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">📍</div><p>No garden locations yet. Add your beds, grow bags and containers.</p></div></div>`
-    : state.locations.map(loc => {
-      const plantCount = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear()).length;
-      const plants = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear());
+    <div class="page-header"><h1 class="page-title">🌸 Cross Pollination</h1><button class="btn btn-primary" onclick="showAddCross()">+ Log Cross</button></div>
+    ${state.crosses.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🌸</div><p>No cross pollinations logged yet.</p></div></div>`
+    : state.crosses.map(c => {
+      const statusColor = c.success === true ? '#22c55e' : c.success === false ? '#ef4444' : '#f59e0b';
+      const statusText = c.success === true ? '✅ Success' : c.success === false ? '❌ Failed' : '⏳ Pending';
       return `
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
             <div>
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
-                <strong style="font-size:1.1rem;">${loc.name}</strong>
-                <span class="tag tag-active">${loc.type}</span>
-                ${!loc.active ? '<span class="tag tag-complete">Inactive</span>' : ''}
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+                <span class="designation" style="font-size:0.8rem;">${c.mother_designation}</span>
+                <span style="font-size:1.2rem;">×</span>
+                <span class="designation" style="font-size:0.8rem;">${c.father_designation || '?'}</span>
+                ${c.project_code ? `<span class="tag tag-active">${c.project_code}</span>` : ''}
               </div>
-              ${loc.size_description ? `<div style="font-size:0.85rem;color:var(--text-muted);">📐 ${loc.size_description}</div>` : ''}
-              ${loc.sun_exposure ? `<div style="font-size:0.85rem;color:var(--text-muted);">☀️ ${loc.sun_exposure}</div>` : ''}
-              ${loc.soil_notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">🌱 ${loc.soil_notes}</div>` : ''}
-              ${loc.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${loc.notes}</div>` : ''}
+              <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-muted);">
+                ${c.date_bagged ? `<span>🛍️ Bagged: ${new Date(c.date_bagged).toLocaleDateString()}</span>` : ''}
+                ${c.date_pollinated ? `<span>🌸 Pollinated: ${new Date(c.date_pollinated).toLocaleDateString()}</span>` : ''}
+                ${c.date_unbagged ? `<span>✂️ Unbagged: ${new Date(c.date_unbagged).toLocaleDateString()}</span>` : ''}
+              </div>
+              ${c.fruit_set ? '<div style="font-size:0.85rem;margin-top:4px;">🍅 Fruit set confirmed</div>' : ''}
+              ${c.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${c.notes}</div>` : ''}
             </div>
-            <div style="display:flex;gap:6px;">
-              <button class="btn btn-secondary btn-sm" onclick="showEditLocation(${loc.id})">✏️ Edit</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteLocation(${loc.id})">🗑️</button>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+              <span style="font-weight:700;color:${statusColor};">${statusText}</span>
+              <div style="display:flex;gap:4px;">
+                <button class="btn btn-secondary btn-sm" onclick="showUpdateCross(${c.id})">✏️ Update</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteCross(${c.id})">🗑️</button>
+              </div>
             </div>
-          </div>
-          <div style="margin-top:16px;">
-            <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Plants this season (${plantCount}):</div>
-            ${plants.length === 0 ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants assigned yet.</p>'
-            : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${plants.map(p => `<span class="designation" style="font-size:0.75rem;">${p.designation}</span>`).join('')}</div>`}
           </div>
         </div>
       `;
@@ -586,63 +611,171 @@ function renderLocations() {
   `;
 }
 
-function locationForm(loc) {
-  const types = ['Raised Bed', 'Fabric Grow Bag', 'In Ground', 'Container/Pot', 'Greenhouse Bed', 'Greenhouse Bench', 'Other'];
-  const sunOptions = ['Full Sun', 'Partial Sun', 'Partial Shade', 'Full Shade'];
-  return `
-    <div class="form-group"><label class="form-label">Location Name *</label><input class="form-control" id="f-lname" value="${loc ? loc.name : ''}" placeholder="e.g. Front Bed, Grow Bag Table"></div>
+function showAddCross() {
+  openModal('Log Cross Pollination', `
+    <div class="alert alert-info">Log a hand pollination attempt between two plants.</div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Type *</label>
-        <select class="form-control" id="f-ltype">
-          ${types.map(t => `<option value="${t}" ${loc && loc.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+      <div class="form-group"><label class="form-label">Mother Plant (receives pollen) *</label>
+        <select class="form-control" id="f-mother">
+          <option value="">Select plant...</option>
+          ${state.plants.map(p => `<option value="${p.designation}">${p.designation} — ${p.variety_name || ''}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label class="form-label">Size / Dimensions</label><input class="form-control" id="f-lsize" value="${loc ? loc.size_description || '' : ''}" placeholder="e.g. 4x5 ft, 5 gallon"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Sun Exposure</label>
-        <select class="form-control" id="f-lsun">
-          <option value="">Select...</option>
-          ${sunOptions.map(s => `<option value="${s}" ${loc && loc.sun_exposure === s ? 'selected' : ''}>${s}</option>`).join('')}
+      <div class="form-group"><label class="form-label">Father Plant (donates pollen)</label>
+        <select class="form-control" id="f-father">
+          <option value="">Select plant...</option>
+          ${state.plants.map(p => `<option value="${p.designation}">${p.designation} — ${p.variety_name || ''}</option>`).join('')}
         </select>
       </div>
-      ${loc ? `<div class="form-group"><label class="form-label">Status</label>
-        <select class="form-control" id="f-lactive">
-          <option value="true" ${loc.active ? 'selected' : ''}>Active</option>
-          <option value="false" ${!loc.active ? 'selected' : ''}>Inactive</option>
-        </select>
-      </div>` : ''}
     </div>
-    <div class="form-group"><label class="form-label">Soil / Mix Notes</label><textarea class="form-control" id="f-lsoil" rows="2" placeholder="e.g. Kellogg raised bed mix, amended with cow manure">${loc ? loc.soil_notes || '' : ''}</textarea></div>
-    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-lnotes" rows="2" placeholder="Trellis type, arch, other notes...">${loc ? loc.notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Breeding Project</label>
+      <select class="form-control" id="f-project">
+        <option value="">None</option>
+        ${state.projects.filter(p => p.status === 'active').map(p => `<option value="${p.code}">${p.name} (${p.code})</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date Bagged</label><input class="form-control" id="f-bagged" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group"><label class="form-label">Date Pollinated</label><input class="form-control" id="f-pollinated" type="date"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2" placeholder="Flower condition, pollen viability, method used..."></textarea></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="${loc ? `submitEditLocation(${loc.id})` : 'submitLocation()'}">${loc ? 'Save Changes' : 'Add Location'}</button>
+      <button class="btn btn-primary" onclick="submitCross()">Log Cross</button>
+    </div>
+  `);
+}
+
+function showUpdateCross(id) {
+  const c = state.crosses.find(x => x.id === id);
+  openModal('Update Cross — ' + c.mother_designation + ' × ' + (c.father_designation || '?'), `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date Pollinated</label><input class="form-control" id="f-pollinated" type="date" value="${c.date_pollinated ? c.date_pollinated.split('T')[0] : ''}"></div>
+      <div class="form-group"><label class="form-label">Date Unbagged</label><input class="form-control" id="f-unbagged" type="date" value="${c.date_unbagged ? c.date_unbagged.split('T')[0] : ''}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Fruit Set?</label>
+        <select class="form-control" id="f-fruitset">
+          <option value="false" ${!c.fruit_set ? 'selected' : ''}>No</option>
+          <option value="true" ${c.fruit_set ? 'selected' : ''}>Yes 🍅</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Result</label>
+        <select class="form-control" id="f-success">
+          <option value="" ${c.success === null ? 'selected' : ''}>Pending</option>
+          <option value="true" ${c.success === true ? 'selected' : ''}>Success ✅</option>
+          <option value="false" ${c.success === false ? 'selected' : ''}>Failed ❌</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2">${c.notes || ''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitUpdateCross(${id})">Save Update</button>
+    </div>
+  `);
+}
+
+async function submitCross() {
+  const mother_designation = document.getElementById('f-mother').value;
+  if (!mother_designation) return alert('Mother plant is required');
+  await api('/api/crosses', 'POST', { mother_designation, father_designation: document.getElementById('f-father').value || null, project_code: document.getElementById('f-project').value || null, date_bagged: document.getElementById('f-bagged').value || null, date_pollinated: document.getElementById('f-pollinated').value || null, notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitUpdateCross(id) {
+  const successVal = document.getElementById('f-success').value;
+  await api('/api/crosses/' + id, 'PUT', { date_pollinated: document.getElementById('f-pollinated').value || null, date_unbagged: document.getElementById('f-unbagged').value || null, fruit_set: document.getElementById('f-fruitset').value === 'true', success: successVal === '' ? null : successVal === 'true', notes: document.getElementById('f-notes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteCross(id) {
+  if (!confirm('Delete this cross pollination record? This cannot be undone.')) return;
+  await api('/api/crosses/' + id, 'DELETE'); await loadAll(); render();
+}
+
+// FRUIT OBSERVATIONS
+function renderObservations() {
+  return `
+    <div class="page-header"><h1 class="page-title">🔍 Fruit Observations</h1><button class="btn btn-primary" onclick="showAddObservation()">+ Add Observation</button></div>
+    ${state.observations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>No fruit observations yet. Log mid-season notes here separate from the harvest log.</p></div></div>`
+    : state.observations.map(o => `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+              <span class="designation" style="font-size:0.8rem;">${o.plant_designation}</span>
+              ${o.variety_name ? `<span style="font-size:0.85rem;color:var(--text-muted);">${o.variety_name}</span>` : ''}
+              <span style="font-size:0.85rem;color:var(--text-muted);">${new Date(o.observation_date).toLocaleDateString()}</span>
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;">
+              ${o.fruit_count !== null ? `<span>🍅 Count: <strong>${o.fruit_count}</strong></span>` : ''}
+              ${o.avg_length_inches ? `<span>📏 Length: <strong>${o.avg_length_inches}"</strong></span>` : ''}
+              ${o.avg_diameter_inches ? `<span>⭕ Diameter: <strong>${o.avg_diameter_inches}"</strong></span>` : ''}
+              ${o.color ? `<span>🎨 Color: <strong>${o.color}</strong></span>` : ''}
+              ${o.texture ? `<span>✋ Texture: <strong>${o.texture}</strong></span>` : ''}
+            </div>
+            ${o.flavor_notes ? `<div style="font-size:0.85rem;margin-top:6px;">😋 <em>${o.flavor_notes}</em></div>` : ''}
+            ${o.health_notes ? `<div style="font-size:0.85rem;margin-top:4px;color:#f59e0b;">⚕️ ${o.health_notes}</div>` : ''}
+            ${o.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${o.notes}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-secondary btn-sm" onclick="showEditObservation(${o.id})">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteObservation(${o.id})">🗑️</button>
+          </div>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function observationForm(o) {
+  return `
+    <div class="form-group"><label class="form-label">Plant *</label>
+      <select class="form-control" id="f-plant" ${o ? 'disabled' : ''}>
+        <option value="">Select plant...</option>
+        ${state.plants.map(p => `<option value="${p.designation}" ${o && o.plant_designation === p.designation ? 'selected' : ''}>${p.designation} — ${p.variety_name || ''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Observation Date *</label><input class="form-control" id="f-obsdate" type="date" value="${o && o.observation_date ? o.observation_date.split('T')[0] : new Date().toISOString().split('T')[0]}"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Fruit Count</label><input class="form-control" id="f-count" type="number" min="0" value="${o ? o.fruit_count || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Color</label><input class="form-control" id="f-color" value="${o ? o.color || '' : ''}" placeholder="e.g. Dark green, turning yellow"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Avg Length (inches)</label><input class="form-control" id="f-length" type="number" step="0.1" value="${o ? o.avg_length_inches || '' : ''}"></div>
+      <div class="form-group"><label class="form-label">Avg Diameter (inches)</label><input class="form-control" id="f-diameter" type="number" step="0.1" value="${o ? o.avg_diameter_inches || '' : ''}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Texture Notes</label><input class="form-control" id="f-texture" value="${o ? o.texture || '' : ''}" placeholder="e.g. Firm, bumpy, smooth"></div>
+    <div class="form-group"><label class="form-label">Flavor Notes</label><textarea class="form-control" id="f-flavor" rows="2" placeholder="Taste observations if sampled...">${o ? o.flavor_notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Health / Disease Notes</label><textarea class="form-control" id="f-health" rows="2" placeholder="Any pest damage, disease signs, issues...">${o ? o.health_notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">General Notes</label><textarea class="form-control" id="f-notes" rows="2">${o ? o.notes || '' : ''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="${o ? `submitEditObservation(${o.id})` : 'submitObservation()'}">${o ? 'Save Changes' : 'Save Observation'}</button>
     </div>
   `;
 }
 
-function showAddLocation() { openModal('Add Garden Location', locationForm(null)); }
-function showEditLocation(id) { openModal('Edit Location', locationForm(state.locations.find(l => l.id === id))); }
+function showAddObservation() { openModal('Add Fruit Observation', observationForm(null)); }
+function showEditObservation(id) { openModal('Edit Observation', observationForm(state.observations.find(x => x.id === id))); }
 
-async function submitLocation() {
-  const name = document.getElementById('f-lname').value.trim();
-  const type = document.getElementById('f-ltype').value;
-  if (!name || !type) return alert('Name and type are required');
-  await api('/api/locations', 'POST', { name, type, size_description: document.getElementById('f-lsize').value, sun_exposure: document.getElementById('f-lsun').value, soil_notes: document.getElementById('f-lsoil').value, notes: document.getElementById('f-lnotes').value });
+async function submitObservation() {
+  const plant_designation = document.getElementById('f-plant').value;
+  const observation_date = document.getElementById('f-obsdate').value;
+  if (!plant_designation || !observation_date) return alert('Plant and date are required');
+  await api('/api/observations', 'POST', { plant_designation, observation_date, fruit_count: document.getElementById('f-count').value || null, color: document.getElementById('f-color').value, avg_length_inches: document.getElementById('f-length').value || null, avg_diameter_inches: document.getElementById('f-diameter').value || null, texture: document.getElementById('f-texture').value, flavor_notes: document.getElementById('f-flavor').value, health_notes: document.getElementById('f-health').value, notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
 }
 
-async function submitEditLocation(id) {
-  const name = document.getElementById('f-lname').value.trim();
-  if (!name) return alert('Name is required');
-  await api('/api/locations/' + id, 'PUT', { name, type: document.getElementById('f-ltype').value, size_description: document.getElementById('f-lsize').value, sun_exposure: document.getElementById('f-lsun').value, soil_notes: document.getElementById('f-lsoil').value, notes: document.getElementById('f-lnotes').value, active: document.getElementById('f-lactive').value === 'true' });
+async function submitEditObservation(id) {
+  await api('/api/observations/' + id, 'PUT', { observation_date: document.getElementById('f-obsdate').value, fruit_count: document.getElementById('f-count').value || null, color: document.getElementById('f-color').value, avg_length_inches: document.getElementById('f-length').value || null, avg_diameter_inches: document.getElementById('f-diameter').value || null, texture: document.getElementById('f-texture').value, flavor_notes: document.getElementById('f-flavor').value, health_notes: document.getElementById('f-health').value, notes: document.getElementById('f-notes').value });
   closeModal(); await loadAll(); render();
 }
 
-async function deleteLocation(id) {
-  if (!confirm('Delete this location? This cannot be undone.')) return;
-  await api('/api/locations/' + id, 'DELETE'); await loadAll(); render();
+async function deleteObservation(id) {
+  if (!confirm('Delete this observation? This cannot be undone.')) return;
+  await api('/api/observations/' + id, 'DELETE'); await loadAll(); render();
 }
 
 function renderHarvest() {
@@ -853,40 +986,139 @@ async function deleteGermination(id) {
   await api('/api/germination/' + id, 'DELETE'); await loadAll(); render();
 }
 
+function renderLocations() {
+  return `
+    <div class="page-header"><h1 class="page-title">📍 Garden Locations</h1><button class="btn btn-primary" onclick="showAddLocation()">+ Add Location</button></div>
+    ${state.locations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">📍</div><p>No garden locations yet.</p></div></div>`
+    : state.locations.map(loc => {
+      const plants = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear());
+      return `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+                <strong style="font-size:1.1rem;">${loc.name}</strong>
+                <span class="tag tag-active">${loc.type}</span>
+                ${!loc.active ? '<span class="tag tag-complete">Inactive</span>' : ''}
+              </div>
+              ${loc.size_description ? `<div style="font-size:0.85rem;color:var(--text-muted);">📐 ${loc.size_description}</div>` : ''}
+              ${loc.sun_exposure ? `<div style="font-size:0.85rem;color:var(--text-muted);">☀️ ${loc.sun_exposure}</div>` : ''}
+              ${loc.soil_notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">🌱 ${loc.soil_notes}</div>` : ''}
+              ${loc.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${loc.notes}</div>` : ''}
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-secondary btn-sm" onclick="showEditLocation(${loc.id})">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteLocation(${loc.id})">🗑️</button>
+            </div>
+          </div>
+          <div style="margin-top:16px;">
+            <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Plants this season (${plants.length}):</div>
+            ${plants.length === 0 ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants assigned yet.</p>'
+            : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${plants.map(p => `<span class="designation" style="font-size:0.75rem;">${p.designation}</span>`).join('')}</div>`}
+          </div>
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+function locationForm(loc) {
+  const types = ['Raised Bed', 'Fabric Grow Bag', 'In Ground', 'Container/Pot', 'Greenhouse Bed', 'Greenhouse Bench', 'Other'];
+  const sunOptions = ['Full Sun', 'Partial Sun', 'Partial Shade', 'Full Shade'];
+  return `
+    <div class="form-group"><label class="form-label">Location Name *</label><input class="form-control" id="f-lname" value="${loc ? loc.name : ''}" placeholder="e.g. Front Bed, Grow Bag Table"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type *</label>
+        <select class="form-control" id="f-ltype">
+          ${types.map(t => `<option value="${t}" ${loc && loc.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Size / Dimensions</label><input class="form-control" id="f-lsize" value="${loc ? loc.size_description || '' : ''}" placeholder="e.g. 4x5 ft, 5 gallon"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Sun Exposure</label>
+        <select class="form-control" id="f-lsun">
+          <option value="">Select...</option>
+          ${sunOptions.map(s => `<option value="${s}" ${loc && loc.sun_exposure === s ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      ${loc ? `<div class="form-group"><label class="form-label">Status</label>
+        <select class="form-control" id="f-lactive">
+          <option value="true" ${loc.active ? 'selected' : ''}>Active</option>
+          <option value="false" ${!loc.active ? 'selected' : ''}>Inactive</option>
+        </select>
+      </div>` : ''}
+    </div>
+    <div class="form-group"><label class="form-label">Soil / Mix Notes</label><textarea class="form-control" id="f-lsoil" rows="2">${loc ? loc.soil_notes || '' : ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-lnotes" rows="2">${loc ? loc.notes || '' : ''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="${loc ? `submitEditLocation(${loc.id})` : 'submitLocation()'}">${loc ? 'Save Changes' : 'Add Location'}</button>
+    </div>
+  `;
+}
+
+function showAddLocation() { openModal('Add Garden Location', locationForm(null)); }
+function showEditLocation(id) { openModal('Edit Location', locationForm(state.locations.find(l => l.id === id))); }
+
+async function submitLocation() {
+  const name = document.getElementById('f-lname').value.trim();
+  const type = document.getElementById('f-ltype').value;
+  if (!name || !type) return alert('Name and type are required');
+  await api('/api/locations', 'POST', { name, type, size_description: document.getElementById('f-lsize').value, sun_exposure: document.getElementById('f-lsun').value, soil_notes: document.getElementById('f-lsoil').value, notes: document.getElementById('f-lnotes').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitEditLocation(id) {
+  const name = document.getElementById('f-lname').value.trim();
+  if (!name) return alert('Name is required');
+  await api('/api/locations/' + id, 'PUT', { name, type: document.getElementById('f-ltype').value, size_description: document.getElementById('f-lsize').value, sun_exposure: document.getElementById('f-lsun').value, soil_notes: document.getElementById('f-lsoil').value, notes: document.getElementById('f-lnotes').value, active: document.getElementById('f-lactive').value === 'true' });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteLocation(id) {
+  if (!confirm('Delete this location? This cannot be undone.')) return;
+  await api('/api/locations/' + id, 'DELETE'); await loadAll(); render();
+}
+
 function renderProjects() {
   return `
     <div class="page-header"><h1 class="page-title">🧬 Breeding Projects</h1><button class="btn btn-primary" onclick="showAddProject()">+ New Project</button></div>
     ${state.projects.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🧬</div><p>No breeding projects yet.</p></div></div>`
-    : state.projects.map(p => `
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
-          <div>
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
-              <strong style="font-size:1.1rem;">${p.name}</strong>
-              <span class="designation">${p.code}</span>
-              <span class="tag tag-${p.status}">${p.status}</span>
+    : state.projects.map(p => {
+      const projectCrosses = state.crosses.filter(c => c.project_code === p.code);
+      return `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+                <strong style="font-size:1.1rem;">${p.name}</strong>
+                <span class="designation">${p.code}</span>
+                <span class="tag tag-${p.status}">${p.status}</span>
+              </div>
+              <div style="color:var(--text-muted);font-size:0.9rem;">${p.description || 'No description'}</div>
+              <div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">Started: ${p.started_year}</div>
             </div>
-            <div style="color:var(--text-muted);font-size:0.9rem;">${p.description || 'No description'}</div>
-            <div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">Started: ${p.started_year}</div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-secondary btn-sm" onclick="showEditProject('${p.code}')">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteProject('${p.code}')">🗑️</button>
+            </div>
           </div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn btn-secondary btn-sm" onclick="showEditProject('${p.code}')">✏️ Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteProject('${p.code}')">🗑️</button>
-          </div>
+          ${p.target_traits && p.target_traits.length > 0 ? `
+          <div style="margin-top:16px;">
+            <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Target Traits:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">${p.target_traits.map(t => `<span class="tag tag-heirloom">${t}</span>`).join('')}</div>
+          </div>` : ''}
+          ${projectCrosses.length > 0 ? `
+          <div style="margin-top:16px;">
+            <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Cross Pollinations (${projectCrosses.length}):</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              ${projectCrosses.map(c => `<span style="font-size:0.8rem;padding:3px 8px;border-radius:4px;background:var(--green-bg);">${c.mother_designation} × ${c.father_designation || '?'} ${c.success === true ? '✅' : c.success === false ? '❌' : '⏳'}</span>`).join('')}
+            </div>
+          </div>` : ''}
         </div>
-        ${p.target_traits && p.target_traits.length > 0 ? `
-        <div style="margin-top:16px;">
-          <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Target Traits:</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">${p.target_traits.map(t => `<span class="tag tag-heirloom">${t}</span>`).join('')}</div>
-        </div>` : ''}
-        <div style="margin-top:16px;">
-          <div style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:8px;">Plants in this project:</div>
-          ${state.plants.filter(pl => pl.designation.startsWith(p.code)).length === 0
-            ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants logged yet.</p>'
-            : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${state.plants.filter(pl => pl.designation.startsWith(p.code)).map(pl => `<span class="designation">${pl.designation}</span>`).join('')}</div>`}
-        </div>
-      </div>
-    `).join('')}
+      `;
+    }).join('')}
   `;
 }
 
