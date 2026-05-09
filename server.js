@@ -5,6 +5,9 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +30,14 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/', apiLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/setup', authLimiter);
+
+// Redirect HTTP to HTTPS
+app.use((req, res, next) => {
+  if (!req.secure) {
+    return res.redirect('https://' + req.headers.host.split(':')[0] + ':' + PORT + req.url);
+  }
+  next();
+});
 
 function sanitizeString(str, maxLen = 255) {
   if (str === null || str === undefined) return null;
@@ -426,8 +437,7 @@ app.post('/api/plants', authMiddleware, async (req, res) => {
     const startNum = parseInt(existing.rows[0].count) + 1;
     const created = [];
     for (let i = 0; i < count; i++) {
-      const designation = seed_lot_designation + '-P' + String(startNum + i).padStart(2, '0');
-      created.push((await pool.query('INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, location_id, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [designation, seed_lot_designation, season_year, season_type, location_id || null, sanitizeString(req.body.notes, 2000)])).rows[0]);
+      created.push((await pool.query('INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, location_id, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [seed_lot_designation + '-P' + String(startNum + i).padStart(2, '0'), seed_lot_designation, season_year, season_type, location_id || null, sanitizeString(req.body.notes, 2000)])).rows[0]);
     }
     res.json(created);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
@@ -634,5 +644,23 @@ app.post('/api/backup/import', authMiddleware, async (req, res) => {
 app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 
 initDB().then(() => {
-  app.listen(PORT, () => console.log('SeedVault running on port ' + PORT));
+  const certPath = '/app/certs/cert.pem';
+  const keyPath = '/app/certs/key.pem';
+  if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+    const httpsOptions = {
+      cert: fs.readFileSync(certPath),
+      key: fs.readFileSync(keyPath),
+    };
+    https.createServer(httpsOptions, app).listen(PORT, () => {
+      console.log('SeedVault running on HTTPS port ' + PORT);
+    });
+    http.createServer((req, res) => {
+      res.writeHead(301, { Location: 'https://' + req.headers.host.split(':')[0] + ':' + PORT + req.url });
+      res.end();
+    }).listen(3001, () => {
+      console.log('HTTP redirect running on port 3001');
+    });
+  } else {
+    app.listen(PORT, () => console.log('SeedVault running on HTTP port ' + PORT));
+  }
 }).catch(err => { console.error('Failed to initialize database:', err); process.exit(1); });
