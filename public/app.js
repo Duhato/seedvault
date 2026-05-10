@@ -457,6 +457,40 @@ function renderDashboard() {
         <button class="btn btn-secondary btn-sm" onclick="printSeasonSummary()">🖨️ Season Summary</button>
       </div>
     </div>
+    ${(() => {
+      if (!state.settings.last_frost_date) return '';
+      const today = new Date();
+      const year = today.getFullYear();
+      const [lm, ld] = state.settings.last_frost_date.split('-').map(Number);
+      const lastFrost = new Date(year, lm-1, ld);
+      const daysUntil = Math.ceil((lastFrost - today) / (1000 * 60 * 60 * 24));
+      if (daysUntil >= 0 && daysUntil <= 14) {
+        return `<div class="card" style="border-left:4px solid #f59e0b;padding:12px 16px;margin-bottom:0;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.5rem;">🌡️</span>
+            <div>
+              <div style="font-weight:700;color:#f59e0b;">Frost Risk — Last Average Frost in ${daysUntil === 0 ? 'Today' : daysUntil + ' days'}</div>
+              <div style="font-size:0.85rem;color:var(--text-muted);">Average last frost date is ${formatFrostDate(state.settings.last_frost_date)}. Protect tender plants.</div>
+            </div>
+          </div>
+        </div>`;
+      }
+      const [fm, fd] = (state.settings.first_frost_date || '10-15').split('-').map(Number);
+      const firstFrost = new Date(year, fm-1, fd);
+      const daysUntilFirst = Math.ceil((firstFrost - today) / (1000 * 60 * 60 * 24));
+      if (daysUntilFirst >= 0 && daysUntilFirst <= 30) {
+        return `<div class="card" style="border-left:4px solid #ef4444;padding:12px 16px;margin-bottom:0;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.5rem;">❄️</span>
+            <div>
+              <div style="font-weight:700;color:#ef4444;">First Fall Frost in ${daysUntilFirst} days</div>
+              <div style="font-size:0.85rem;color:var(--text-muted);">Average first frost date is ${formatFrostDate(state.settings.first_frost_date)}. Plan your final harvests.</div>
+            </div>
+          </div>
+        </div>`;
+      }
+      return '';
+    })()}
     ${state.settings.zip_code ? `
     <div id="weather-widget" class="card" style="padding:12px 16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -742,7 +776,7 @@ function showSeedLotDetail(designation) {
 
   const qtyDisplay = lot.quantity_unit === 'seeds' || !lot.quantity_unit
     ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—')
-    : (lot.quantity_weight ? lot.quantity_weight + ' ' + lot.quantity_unit : '—');
+    : (lot.quantity_weight ? (parseFloat(lot.quantity_weight) % 1 === 0 ? parseInt(lot.quantity_weight) : parseFloat(lot.quantity_weight)) + ' ' + lot.quantity_unit : '—');
 
   openModal('🫙 ' + designation, `
     <div style="display:flex;flex-direction:column;gap:16px;">
@@ -1049,9 +1083,10 @@ function renderSeedLots() {
           let viabilityBadge = '<span style="color:#22c55e;font-weight:600;">🟢 Good</span>';
           if (yearsLeft <= 0) viabilityBadge = '<span style="color:#ef4444;font-weight:600;">🔴 Expired</span>';
           else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#f59e0b;font-weight:600;">🟡 Expiring</span>';
-          const qtyDisplay = lot.quantity_unit === 'seeds' || !lot.quantity_unit
+          const qtyRaw = lot.quantity_unit === 'seeds' || !lot.quantity_unit
             ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—')
-            : (lot.quantity_weight ? lot.quantity_weight + ' ' + lot.quantity_unit : '—');
+            : (lot.quantity_weight ? (parseFloat(lot.quantity_weight) % 1 === 0 ? parseInt(lot.quantity_weight) : parseFloat(lot.quantity_weight)) + ' ' + lot.quantity_unit : '—');
+          const qtyDisplay = qtyRaw;
           return `<tr style="cursor:pointer;" onclick="showSeedLotDetail('${lot.designation}')">
             <td><span class="designation">${lot.designation}</span></td>
             <td>${lot.variety_name || lot.variety_code}</td>
