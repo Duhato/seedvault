@@ -618,7 +618,7 @@ function showSeedLotDetail(designation) {
   if (!lot) return;
   const plants = state.plants.filter(p => p.seed_lot_designation === designation);
   const germTests = state.germination.filter(g => g.seed_lot_designation === designation);
-  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3 };
+  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3, BEAN: 3, LETT: 3, SPIN: 3, CORN: 2, ONI: 1, PEA: 3, SQUA: 4, MELO: 5, HERB: 3 };
   const maxYears = viabilityYears[lot.species_code] || 3;
   const yearsLeft = maxYears - (new Date().getFullYear() - lot.year_saved);
   const viabilityColor = yearsLeft <= 0 ? '#ef4444' : yearsLeft <= 1 ? '#f59e0b' : '#22c55e';
@@ -881,7 +881,7 @@ async function deleteVariety(code) {
 
 function renderSeedLots() {
   const currentYear = new Date().getFullYear();
-  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3 };
+  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3, BEAN: 3, LETT: 3, SPIN: 3, CORN: 2, ONI: 1, PEA: 3, SQUA: 4, MELO: 5, HERB: 3 };
   const searchTerm = (document.getElementById('seedlot-search')?.value || '').toLowerCase();
   const filterSpecies = document.getElementById('seedlot-filter-species')?.value || '';
   const filterGen = document.getElementById('seedlot-filter-gen')?.value || '';
@@ -1751,10 +1751,33 @@ async function deletePlant(designation) {
 
 // AMENDMENTS
 function renderAmendments() {
+  const searchTerm = (document.getElementById('amend-search')?.value || '').toLowerCase();
+  const filterType = document.getElementById('amend-filter-type')?.value || '';
+  let filteredAmendments = state.amendments.filter(a => {
+    const matchSearch = !searchTerm ||
+      (a.plant_designation || '').toLowerCase().includes(searchTerm) ||
+      (a.product_name || '').toLowerCase().includes(searchTerm) ||
+      (a.location_name || '').toLowerCase().includes(searchTerm) ||
+      (a.notes || '').toLowerCase().includes(searchTerm);
+    const matchType = !filterType || a.type === filterType;
+    return matchSearch && matchType;
+  });
+  const types = [...new Set(state.amendments.map(a => a.type))].sort();
   return `
     <div class="page-header"><h1 class="page-title">🌿 Amendments & Fertilizer</h1><button class="btn btn-primary" onclick="showAddAmendment()">+ Log Amendment</button></div>
-    ${state.amendments.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🌿</div><p>No amendments logged yet. Use the 🌿 Amend button on a plant or location.</p></div></div>`
-    : state.amendments.map(a => `
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="amend-search" placeholder="🔍 Search amendments..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="amend-filter-type" style="max-width:150px;" onchange="render()">
+          <option value="">All Types</option>
+          ${types.map(t => `<option value="${t}" ${filterType === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+        ${searchTerm || filterType ? `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('amend-search').value='';document.getElementById('amend-filter-type').value='';render()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredAmendments.length} of ${state.amendments.length} records</span>
+      </div>
+    </div>
+    ${filteredAmendments.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🌿</div><p>${state.amendments.length === 0 ? 'No amendments logged yet. Use the 🌿 Amend button on a plant or location.' : 'No amendments match your search.'}</p></div></div>`
+    : filteredAmendments.map(a => `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
           <div>
@@ -2020,13 +2043,27 @@ async function deleteHarvest(id) {
 }
 
 function renderGermination() {
+  const searchTerm = (document.getElementById('germ-search')?.value || '').toLowerCase();
+  let filteredGerm = state.germination.filter(g => {
+    return !searchTerm ||
+      g.seed_lot_designation.toLowerCase().includes(searchTerm) ||
+      (g.variety_name || '').toLowerCase().includes(searchTerm) ||
+      (g.notes || '').toLowerCase().includes(searchTerm);
+  });
   return `
     <div class="page-header"><h1 class="page-title">🌿 Germination</h1><button class="btn btn-primary" onclick="showAddGermination()">+ Start Test</button></div>
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="germ-search" placeholder="🔍 Search tests..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        ${searchTerm ? `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('germ-search').value='';render()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredGerm.length} of ${state.germination.length} tests</span>
+      </div>
+    </div>
     <div class="card">
-      ${state.germination.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>No germination tests yet.</p></div>`
+      ${filteredGerm.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>${state.germination.length === 0 ? 'No germination tests yet.' : 'No tests match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
         <thead><tr><th>Seed Lot</th><th>Variety</th><th>Started</th><th>Planted</th><th>Germinated</th><th>Rate</th><th>Days</th><th>Thinned</th><th>Remaining</th><th>Actions</th></tr></thead>
-        <tbody>${state.germination.map(g => {
+        <tbody>${filteredGerm.map(g => {
           const rate = g.seeds_germinated !== null && g.seeds_planted ? Math.round((g.seeds_germinated / g.seeds_planted) * 100) : null;
           return `<tr>
             <td><span class="designation" style="font-size:0.75rem;">${g.seed_lot_designation}</span></td>
