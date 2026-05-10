@@ -31,11 +31,11 @@ async function checkAuth() {
     const token = getToken();
     if (!token) { showLogin(); return false; }
     const test = await api('/api/stats');
-    if (test.error === 'Unauthorized' || test.error === 'Invalid or expired token') {
+    if (test.error === 'Unauthorized' || test.error === 'Invalid or expired token' || test.error) {
       clearToken(); showLogin(); return false;
     }
     showApp(); return true;
-  } catch (err) { showLogin(); return false; }
+  } catch (err) { clearToken(); showLogin(); return false; }
 }
 
 function showLogin() {
@@ -65,6 +65,7 @@ async function submitLogin() {
   const errEl = document.getElementById('login-error');
   errEl.classList.add('hidden');
   if (!username || !password) { errEl.textContent = 'Please enter username and password'; errEl.classList.remove('hidden'); return; }
+  clearToken();
   try {
     const result = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }).then(r => r.json());
     if (result.error) { errEl.textContent = result.error; errEl.classList.remove('hidden'); return; }
@@ -535,6 +536,7 @@ function renderSeedLots() {
             <td onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;">
               <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
               <button class="btn btn-brown btn-sm" onclick="showPacketPhotos('${lot.designation}')">📷</button>
+              <button class="btn btn-secondary btn-sm" onclick="showSeedLotQR('${lot.designation}')">⬛ QR</button>
               <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
             </td>
           </tr>`;
@@ -542,6 +544,77 @@ function renderSeedLots() {
       </table></div>`}
     </div>
   `;
+}
+
+function showSeedLotQR(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  openModal('QR Code — ' + designation, `
+    <div style="text-align:center;padding:16px;">
+      <div id="qr-container" style="display:inline-block;padding:16px;background:white;border-radius:8px;margin-bottom:16px;"></div>
+      <div style="font-family:monospace;font-size:0.9rem;font-weight:700;margin-bottom:4px;">${designation}</div>
+      <div style="font-size:0.85rem;color:var(--text-muted);">${lot.variety_name || ''}</div>
+      ${lot.storage_location ? `<div style="font-size:0.8rem;color:var(--text-muted);">📦 ${lot.storage_location}</div>` : ''}
+    </div>
+    <div class="alert alert-info">Print and attach to your seed envelope or packet. Scan to open this seed lot instantly.</div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" onclick="printSeedLotQR('${designation}')">🖨️ Print</button>
+    </div>
+  `);
+  setTimeout(() => {
+    const container = document.getElementById('qr-container');
+    if (container && typeof QRCode !== 'undefined') {
+      new QRCode(container, {
+        text: designation,
+        width: 200,
+        height: 200,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H
+      });
+    }
+  }, 100);
+}
+
+function printSeedLotQR(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>QR — ${designation}</title>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+      <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        .label { border: 2px solid #000; display: inline-block; padding: 16px; border-radius: 8px; min-width: 180px; }
+        .designation { font-family: monospace; font-size: 13px; font-weight: bold; margin-top: 8px; }
+        .variety { font-size: 11px; color: #555; margin-top: 4px; }
+        .storage { font-size: 11px; color: #777; margin-top: 2px; }
+      </style>
+    </head>
+    <body>
+      <div class="label">
+        <div id="qr"></div>
+        <div class="designation">${designation}</div>
+        <div class="variety">${lot.variety_name || ''}</div>
+        ${lot.storage_location ? `<div class="storage">${lot.storage_location}</div>` : ''}
+      </div>
+      <script>
+        new QRCode(document.getElementById('qr'), {
+          text: '${designation}',
+          width: 150,
+          height: 150,
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+        setTimeout(() => window.print(), 500);
+      </script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
 }
 
 function showPacketPhotos(designation) {
@@ -2124,6 +2197,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('import-file-input').addEventListener('change', handleImportFile);
   document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
   document.getElementById('login-username').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
+
+  // Tooltip system
+  let tooltipEl = document.getElementById('sv-tooltip');
+  if (!tooltipEl) {
+    tooltipEl = document.createElement('div');
+    tooltipEl.id = 'sv-tooltip';
+    tooltipEl.style.cssText = 'position:fixed;background:#1a1a1a;color:#fff;padding:6px 10px;border-radius:6px;font-size:0.78rem;max-width:200px;text-align:center;z-index:99999;line-height:1.4;pointer-events:none;display:none;';
+    document.body.appendChild(tooltipEl);
+  }
+  let tooltipTimer = null;
+  let lastTooltipEl = null;
+  document.addEventListener('mouseenter', e => {
+    const el = e.target.closest('[data-tip]');
+    if (!el || el === lastTooltipEl) return;
+    if (el.classList.contains('mobile-nav-btn')) return;
+    lastTooltipEl = el;
+    clearTimeout(tooltipTimer);
+    tooltipEl.style.display = 'none';
+    tooltipTimer = setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      tooltipEl.textContent = el.dataset.tooltip;
+      tooltipEl.style.display = 'block';
+      const left = rect.left + rect.width / 2 - tooltipEl.offsetWidth / 2;
+      const top = rect.bottom + 8;
+      tooltipEl.style.left = Math.max(8, left) + 'px';
+      tooltipEl.style.top = top + 'px';
+    }, 800);
+  }, true);
+  document.addEventListener('mouseleave', e => {
+    const el = e.target.closest('[data-tip]');
+    if (!el) return;
+    lastTooltipEl = null;
+    clearTimeout(tooltipTimer);
+    tooltipEl.style.display = 'none';
+  }, true);
+
   await checkAuth();
   if (getToken()) { await loadAll(); render(); }
 });

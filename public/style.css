@@ -516,21 +516,3 @@ tr:hover td { background: var(--green-bg); }
   .auth-card { padding: 24px; }
 }
 
-/* TOOLTIPS */
-[data-tooltip] { position: relative; }
-[data-tooltip]:hover::after {
-  content: attr(data-tooltip);
-  position: fixed;
-  background: #1a1a1a;
-  color: #fff;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  max-width: 200px;
-  white-space: normal;
-  text-align: center;
-  z-index: 99999;
-  line-height: 1.4;
-  animation: tooltipDelay 0s 0.8s both;
-}
-@keyframes tooltipDelay { from { opacity: 0; } to { opacity: 1; } }
