@@ -537,6 +537,7 @@ function renderSeedLots() {
               <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
               <button class="btn btn-brown btn-sm" onclick="showPacketPhotos('${lot.designation}')">📷</button>
               <button class="btn btn-secondary btn-sm" onclick="showSeedLotQR('${lot.designation}')">⬛ QR</button>
+              <button class="btn btn-secondary btn-sm" onclick="printSeedLabel('${lot.designation}')">🏷️ Label</button>
               <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
             </td>
           </tr>`;
@@ -544,6 +545,252 @@ function renderSeedLots() {
       </table></div>`}
     </div>
   `;
+}
+
+function printSeedLabel(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  if (!lot) return;
+  openModal('🏷️ Print Label — ' + designation, `
+    <div class="form-group">
+      <label class="form-label">Label Size</label>
+      <select class="form-control" id="f-labelsize">
+        <option value="30346">Dymo 30346 — 1" x 2-1/8" (Small seed label)</option>
+        <option value="1933081" selected>Dymo 1933081 — 1" x 3-1/2" (Standard seed label)</option>
+        <option value="30252">Dymo 30252 — 1-1/8" x 3-1/2" (Address label)</option>
+        <option value="30321">Dymo 30321 — 2-1/8" x 4" (Large label)</option>
+        <option value="custom">Custom size</option>
+      </select>
+    </div>
+    <div id="custom-size-fields" class="hidden">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Width (inches)</label><input class="form-control" id="f-labelw" type="number" step="0.125" value="3.5"></div>
+        <div class="form-group"><label class="form-label">Height (inches)</label><input class="form-control" id="f-labelh" type="number" step="0.125" value="1"></div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:12px;">
+      <label class="form-label">Include on label</label>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-qr" checked> QR Code</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-variety" checked> Variety Name</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-designation" checked> Designation Code</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-storage" checked> Storage Location</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-growing" checked> Growing Info (days to germ/harvest)</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-dates" checked> Packed/Sell By Dates</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-qty" checked> Quantity</label>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="generateSeedLabel('${designation}')">🖨️ Print</button>
+    </div>
+  `);
+  setTimeout(() => {
+    document.getElementById('f-labelsize').addEventListener('change', e => {
+      document.getElementById('custom-size-fields').classList.toggle('hidden', e.target.value !== 'custom');
+    });
+  }, 50);
+}
+
+const LABEL_SIZES = {
+  '30346':   { width: 2.125, height: 1 },
+  '1933081': { width: 3.5,   height: 1 },
+  '30252':   { width: 3.5,   height: 1.125 },
+  '30321':   { width: 4,     height: 2.125 },
+};
+
+function generateSeedLabel(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  if (!lot) return;
+  const sizeKey = document.getElementById('f-labelsize').value;
+  let w, h;
+  if (sizeKey === 'custom') {
+    w = parseFloat(document.getElementById('f-labelw').value) || 3.5;
+    h = parseFloat(document.getElementById('f-labelh').value) || 1;
+  } else {
+    w = LABEL_SIZES[sizeKey].width;
+    h = LABEL_SIZES[sizeKey].height;
+  }
+  const showQR = document.getElementById('lbl-qr').checked;
+  const showVariety = document.getElementById('lbl-variety').checked;
+  const showDesignation = document.getElementById('lbl-designation').checked;
+  const showStorage = document.getElementById('lbl-storage').checked;
+  const showGrowing = document.getElementById('lbl-growing').checked;
+  const showDates = document.getElementById('lbl-dates').checked;
+  const showQty = document.getElementById('lbl-qty').checked;
+
+  const qrSize = Math.round(h * 82);
+  const isSmall = w <= 2.2;
+  const baseFontSize = isSmall ? 5.5 : 7;
+  const varietyFontSize = isSmall ? 8 : 11;
+
+  const qtyDisplay = lot.quantity_unit === 'seeds' || !lot.quantity_unit
+    ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '')
+    : (lot.quantity_weight ? lot.quantity_weight + lot.quantity_unit : '');
+
+  closeModal();
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Label — ${designation}</title>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+      <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        @page { size: ${w}in ${h}in; margin:0; }
+        body { width:${w}in; height:${h}in; font-family:Arial,sans-serif; overflow:hidden; }
+        .label { width:${w}in; height:${h}in; display:flex; flex-direction:row; align-items:center; padding:3px 5px; gap:4px; }
+        .qr-section { flex-shrink:0; width:${qrSize}px; height:${qrSize}px; display:flex; align-items:center; justify-content:center; }
+        .info-section { flex:1; overflow:hidden; display:flex; flex-direction:column; justify-content:center; gap:1px; }
+        .brand { font-size:5pt; color:#888; text-transform:uppercase; letter-spacing:0.5px; }
+        .variety { font-size:${varietyFontSize}pt; font-weight:bold; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .designation { font-family:monospace; font-size:${baseFontSize}pt; color:#333; }
+        .details { font-size:${baseFontSize}pt; color:#555; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .growing { font-size:${baseFontSize - 0.5}pt; color:#444; }
+      </style>
+    </head>
+    <body>
+      <div class="label">
+        ${showQR ? `<div class="qr-section" id="qr"></div>` : ''}
+        <div class="info-section">
+          <div class="brand">🌱 SeedVault</div>
+          ${showVariety ? `<div class="variety">${lot.variety_name || lot.variety_code}</div>` : ''}
+          ${showDesignation ? `<div class="designation">${designation}</div>` : ''}
+          ${showStorage && lot.storage_location ? `<div class="details">📦 ${lot.storage_location}${showQty && qtyDisplay ? ' · ' + qtyDisplay : ''}</div>` : (showQty && qtyDisplay ? `<div class="details">${qtyDisplay}</div>` : '')}
+          ${showGrowing && (lot.days_to_germination || lot.days_to_harvest) ? `<div class="growing">${lot.days_to_germination ? 'Germ: ' + lot.days_to_germination + 'd' : ''}${lot.days_to_germination && lot.days_to_harvest ? ' · ' : ''}${lot.days_to_harvest ? 'Harvest: ' + lot.days_to_harvest + 'd' : ''}</div>` : ''}
+          ${showDates && (lot.packed_for_year || lot.sell_by_date) ? `<div class="details">${lot.packed_for_year ? 'Packed: ' + lot.packed_for_year : ''}${lot.packed_for_year && lot.sell_by_date ? ' · ' : ''}${lot.sell_by_date ? 'Sell by: ' + lot.sell_by_date : ''}</div>` : ''}
+        </div>
+      </div>
+      ${showQR ? `<script>
+        new QRCode(document.getElementById('qr'), {
+          text: '${designation}',
+          width: ${qrSize},
+          height: ${qrSize},
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+        setTimeout(() => window.print(), 600);
+      </script>` : `<script>setTimeout(() => window.print(), 300);</script>`}
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
+function _oldPrintSeedLabel_unused(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  if (!lot) return;
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Label — ${designation}</title>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page {
+          size: 3.5in 1in;
+          margin: 0;
+        }
+        body {
+          width: 3.5in;
+          height: 1in;
+          font-family: Arial, sans-serif;
+          overflow: hidden;
+        }
+        .label {
+          width: 3.5in;
+          height: 1in;
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          padding: 4px 6px;
+          gap: 6px;
+        }
+        .qr-section {
+          flex-shrink: 0;
+          width: 0.85in;
+          height: 0.85in;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .qr-section img {
+          width: 0.85in;
+          height: 0.85in;
+        }
+        .info-section {
+          flex: 1;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 1px;
+        }
+        .brand {
+          font-size: 6pt;
+          color: #666;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .variety {
+          font-size: 11pt;
+          font-weight: bold;
+          line-height: 1.1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .designation {
+          font-family: monospace;
+          font-size: 7pt;
+          color: #333;
+        }
+        .details {
+          font-size: 7pt;
+          color: #555;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .growing {
+          font-size: 6.5pt;
+          color: #444;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="label">
+        <div class="qr-section" id="qr"></div>
+        <div class="info-section">
+          <div class="brand">🌱 SeedVault</div>
+          <div class="variety">${lot.variety_name || lot.variety_code}</div>
+          <div class="designation">${designation}</div>
+          <div class="details">G${lot.generation} · ${lot.year_saved}${lot.storage_location ? ' · ' + lot.storage_location : ''}${lot.quantity_estimate ? ' · ' + lot.quantity_estimate + ' seeds' : lot.quantity_weight ? ' · ' + lot.quantity_weight + lot.quantity_unit : ''}</div>
+          ${lot.days_to_germination || lot.days_to_harvest ? `<div class="growing">${lot.days_to_germination ? 'Germ: ' + lot.days_to_germination + 'd' : ''}${lot.days_to_germination && lot.days_to_harvest ? ' · ' : ''}${lot.days_to_harvest ? 'Harvest: ' + lot.days_to_harvest + 'd' : ''}</div>` : ''}
+          ${lot.sell_by_date || lot.packed_for_year ? `<div class="details">${lot.packed_for_year ? 'Packed: ' + lot.packed_for_year : ''}${lot.packed_for_year && lot.sell_by_date ? ' · ' : ''}${lot.sell_by_date ? 'Sell by: ' + lot.sell_by_date : ''}</div>` : ''}
+        </div>
+      </div>
+      <script>
+        new QRCode(document.getElementById('qr'), {
+          text: '${designation}',
+          width: 82,
+          height: 82,
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+        setTimeout(() => window.print(), 600);
+      </script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
 }
 
 function showSeedLotQR(designation) {
