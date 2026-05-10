@@ -258,7 +258,18 @@ async function loadWeather() {
     const c = weather.current;
     const codes = {0:'☀️ Clear',1:'🌤️ Mainly Clear',2:'⛅ Partly Cloudy',3:'☁️ Overcast',45:'🌫️ Foggy',48:'🌫️ Icy Fog',51:'🌦️ Light Drizzle',61:'🌧️ Light Rain',63:'🌧️ Rain',65:'🌧️ Heavy Rain',71:'🌨️ Light Snow',73:'❄️ Snow',75:'❄️ Heavy Snow',80:'🌦️ Showers',95:'⛈️ Thunderstorm'};
     const desc = codes[c.weather_code] || '🌡️';
-    weatherEl.innerHTML = `<strong style="font-size:1.1rem;">${Math.round(c.temperature_2m)}°F</strong> <span>${desc}</span> <span style="color:var(--text-muted);font-size:0.85rem;">💨 ${Math.round(c.wind_speed_10m)} mph${c.precipitation > 0 ? ' · 🌧️ ' + c.precipitation + '"' : ''}</span>`;
+    const frostInfo = (() => {
+      if (!state.settings.last_frost_date) return '';
+      const today = new Date();
+      const year = today.getFullYear();
+      const [lm, ld] = state.settings.last_frost_date.split('-').map(Number);
+      const lastFrost = new Date(year, lm-1, ld);
+      const days = Math.ceil((lastFrost - today) / (1000 * 60 * 60 * 24));
+      if (days < 0) return ' · 🌱 ' + Math.abs(days) + 'd past frost';
+      if (days === 0) return ' · 🌡️ Frost today';
+      return ' · 🌡️ Frost in ' + days + 'd';
+    })();
+    weatherEl.innerHTML = '<strong style="font-size:1.1rem;">' + Math.round(c.temperature_2m) + '°F</strong> <span>' + desc + '</span> <span style="color:var(--text-muted);font-size:0.85rem;">💨 ' + Math.round(c.wind_speed_10m) + ' mph' + (c.precipitation > 0 ? ' · 🌧️ ' + c.precipitation + '"' : '') + frostInfo + '</span>';
     if (state.settings.location_name !== (name + ', ' + admin1)) {
       await api('/api/settings', 'PUT', { key: 'location_name', value: name + ', ' + admin1 });
     }
@@ -464,13 +475,17 @@ function renderDashboard() {
       const [lm, ld] = state.settings.last_frost_date.split('-').map(Number);
       const lastFrost = new Date(year, lm-1, ld);
       const daysUntil = Math.ceil((lastFrost - today) / (1000 * 60 * 60 * 24));
-      if (daysUntil >= 0 && daysUntil <= 14) {
+      if (daysUntil >= -7 && daysUntil <= 14) {
+        const msg = daysUntil < 0 ? `Last frost was ${Math.abs(daysUntil)} day${Math.abs(daysUntil) !== 1 ? 's' : ''} ago` : daysUntil === 0 ? 'Frost expected today' : `Frost risk in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`;
+        const sub = daysUntil < 0
+          ? `Your average last frost date is ${formatFrostDate(state.settings.last_frost_date)}. Late frosts are still possible — watch the forecast before planting tender seedlings.`
+          : `Your average last frost date is ${formatFrostDate(state.settings.last_frost_date)}. Protect tender plants from frost damage.`;
         return `<div class="card" style="border-left:4px solid #f59e0b;padding:12px 16px;margin-bottom:0;">
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:1.5rem;">🌡️</span>
             <div>
-              <div style="font-weight:700;color:#f59e0b;">Frost Risk — Last Average Frost in ${daysUntil === 0 ? 'Today' : daysUntil + ' days'}</div>
-              <div style="font-size:0.85rem;color:var(--text-muted);">Average last frost date is ${formatFrostDate(state.settings.last_frost_date)}. Protect tender plants.</div>
+              <div style="font-weight:700;color:#f59e0b;">⚠️ ${msg}</div>
+              <div style="font-size:0.85rem;color:var(--text-muted);">${sub}</div>
             </div>
           </div>
         </div>`;
