@@ -2,8 +2,6 @@
 
 A self-hosted seed saving and plant breeding tracker for home gardeners and seed savers.
 
-![SeedVault Dashboard](docs/screenshot-dashboard.png)
-
 ## Features
 
 - 🫙 **Seed Lot Tracking** — Track every seed packet and saved seed batch with full growing info
