@@ -2347,10 +2347,33 @@ function showLocationDetail(id) {
 }
 
 function renderLocations() {
+  const searchTerm = (document.getElementById('loc-search')?.value || '').toLowerCase();
+  const filterActive = document.getElementById('loc-filter-active')?.value || '';
+  let filteredLocations = state.locations.filter(loc => {
+    const matchSearch = !searchTerm ||
+      loc.name.toLowerCase().includes(searchTerm) ||
+      loc.type.toLowerCase().includes(searchTerm) ||
+      (loc.notes || '').toLowerCase().includes(searchTerm);
+    const matchActive = !filterActive ||
+      (filterActive === 'active' ? loc.active : !loc.active);
+    return matchSearch && matchActive;
+  });
   return `
     <div class="page-header"><h1 class="page-title">📍 Garden Locations</h1><button class="btn btn-primary" onclick="showAddLocation()">+ Add Location</button></div>
-    ${state.locations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">📍</div><p>No garden locations yet.</p></div></div>`
-    : state.locations.map(loc => {
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="loc-search" placeholder="🔍 Search locations..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="loc-filter-active" style="max-width:150px;" onchange="render()">
+          <option value="">All Locations</option>
+          <option value="active" ${filterActive === 'active' ? 'selected' : ''}>Active Only</option>
+          <option value="inactive" ${filterActive === 'inactive' ? 'selected' : ''}>Inactive Only</option>
+        </select>
+        ${searchTerm || filterActive ? `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('loc-search').value='';document.getElementById('loc-filter-active').value='';render()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredLocations.length} of ${state.locations.length} locations</span>
+      </div>
+    </div>
+    ${filteredLocations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">📍</div><p>${state.locations.length === 0 ? 'No garden locations yet.' : 'No locations match your search.'}</p></div></div>`
+    : filteredLocations.map(loc => {
       const plants = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear());
       const locAmendments = state.amendments.filter(a => a.location_id === loc.id).slice(0, 3);
       return `
@@ -2762,10 +2785,33 @@ function showProjectDetail(code) {
 }
 
 function renderProjects() {
+  const searchTerm = (document.getElementById('project-search')?.value || '').toLowerCase();
+  const filterStatus = document.getElementById('project-filter-status')?.value || '';
+  let filteredProjects = state.projects.filter(p => {
+    const matchSearch = !searchTerm ||
+      p.name.toLowerCase().includes(searchTerm) ||
+      p.code.toLowerCase().includes(searchTerm) ||
+      (p.description || '').toLowerCase().includes(searchTerm);
+    const matchStatus = !filterStatus || p.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
   return `
     <div class="page-header"><h1 class="page-title">🧬 Breeding Projects</h1><button class="btn btn-primary" onclick="showAddProject()">+ New Project</button></div>
-    ${state.projects.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🧬</div><p>No breeding projects yet.</p></div></div>`
-    : state.projects.map(p => {
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="project-search" placeholder="🔍 Search projects..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="project-filter-status" style="max-width:150px;" onchange="render()">
+          <option value="">All Status</option>
+          <option value="active" ${filterStatus === 'active' ? 'selected' : ''}>Active</option>
+          <option value="complete" ${filterStatus === 'complete' ? 'selected' : ''}>Complete</option>
+          <option value="paused" ${filterStatus === 'paused' ? 'selected' : ''}>Paused</option>
+        </select>
+        ${searchTerm || filterStatus ? `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('project-search').value='';document.getElementById('project-filter-status').value='';render()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredProjects.length} of ${state.projects.length} projects</span>
+      </div>
+    </div>
+    ${filteredProjects.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🧬</div><p>${state.projects.length === 0 ? 'No breeding projects yet.' : 'No projects match your search.'}</p></div></div>`
+    : filteredProjects.map(p => {
       const projectCrosses = state.crosses.filter(c => c.project_code === p.code);
       return `
         <div class="card" style="cursor:pointer;" onclick="showProjectDetail('${p.code}')">

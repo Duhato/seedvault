@@ -901,18 +901,30 @@ app.get('/api/viability', authMiddleware, async (req, res) => {
 // BACKUP
 app.get('/api/backup/export', authMiddleware, async (req, res) => {
   try {
-    const [species, varieties, seedLots, plants, projects, harvest] = await Promise.all([
+    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources] = await Promise.all([
       pool.query('SELECT * FROM species ORDER BY code'),
       pool.query('SELECT * FROM varieties ORDER BY code'),
       pool.query('SELECT * FROM seed_lots ORDER BY designation'),
       pool.query('SELECT * FROM plants ORDER BY designation'),
       pool.query('SELECT * FROM breeding_projects ORDER BY code'),
       pool.query('SELECT * FROM harvest_log ORDER BY harvest_date'),
+      pool.query('SELECT * FROM germination_tests ORDER BY date_started'),
+      pool.query('SELECT * FROM plant_amendments ORDER BY amendment_date'),
+      pool.query('SELECT * FROM cross_pollinations ORDER BY created_at'),
+      pool.query('SELECT * FROM fruit_observations ORDER BY observation_date'),
+      pool.query('SELECT * FROM garden_locations ORDER BY name'),
+      pool.query('SELECT * FROM seed_sources ORDER BY name'),
     ]);
     const filename = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.json';
     res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
     res.setHeader('Content-Type', 'application/json');
-    res.json({ app: 'SeedVault', version: '1.0.0', exported_at: new Date().toISOString(), data: { species: species.rows, varieties: varieties.rows, seed_lots: seedLots.rows, plants: plants.rows, breeding_projects: projects.rows, harvest_log: harvest.rows } });
+    res.json({ app: 'SeedVault', version: '1.1.0', exported_at: new Date().toISOString(), data: {
+      species: species.rows, varieties: varieties.rows, seed_lots: seedLots.rows,
+      plants: plants.rows, breeding_projects: projects.rows, harvest_log: harvest.rows,
+      germination_tests: germination.rows, plant_amendments: amendments.rows,
+      cross_pollinations: crosses.rows, fruit_observations: observations.rows,
+      garden_locations: locations.rows, seed_sources: sources.rows
+    }});
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
