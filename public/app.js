@@ -3335,6 +3335,36 @@ function renderWeather() {
   const totalPrecip = thisYearLog.reduce((s,w) => s + parseFloat(w.precip_inches || 0), 0).toFixed(2);
   const frostDays = state.frostEvents.filter(f => f.year === currentYear && f.confirmed).length;
 
+  // Calculate Growing Degree Days (base 50°F for most veg, from last frost date to today)
+  const gddBase = 50;
+  const lastFrostSetting = state.settings.last_frost_date;
+  let gddStartDate = null;
+  if (lastFrostSetting) {
+    const [lm, ld] = lastFrostSetting.split('-').map(Number);
+    gddStartDate = new Date(currentYear, lm - 1, ld);
+  }
+  const today = new Date();
+  const gddLog = thisYearLog.filter(w => {
+    if (!gddStartDate) return false;
+    const d = new Date(w.log_date);
+    return d >= gddStartDate && d <= today;
+  });
+  const totalGDD = Math.round(gddLog.reduce((s, w) => {
+    const avg = (parseFloat(w.high_temp_f || 0) + parseFloat(w.low_temp_f || 0)) / 2;
+    return s + Math.max(0, avg - gddBase);
+  }, 0));
+  const gddDaysLogged = gddLog.length;
+
+  // GDD thresholds for common crops (base 50°F)
+  const gddCrops = [
+    { name: 'Cucumbers', min: 800, max: 1200, icon: '🥒' },
+    { name: 'Tomatoes', min: 1000, max: 1400, icon: '🍅' },
+    { name: 'Peppers', min: 1200, max: 1600, icon: '🫑' },
+    { name: 'Beans', min: 600, max: 900, icon: '🫘' },
+    { name: 'Corn', min: 1200, max: 1800, icon: '🌽' },
+    { name: 'Squash', min: 800, max: 1200, icon: '🎃' },
+  ];
+
   // Calculate personal frost averages
   const lastSpringFrosts = state.frostEvents.filter(f => f.event_type === 'last_spring' && f.confirmed);
   const firstFallFrosts = state.frostEvents.filter(f => f.event_type === 'first_fall' && f.confirmed);
@@ -3372,6 +3402,40 @@ function renderWeather() {
       <div class="stat-card" style="cursor:default;"><div class="stat-number">${frostDays}</div><div class="stat-label">Confirmed Frost Events ${currentYear}</div></div>
     </div>
 
+    ${gddStartDate ? `
+    <div class="card" style="margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="card-title" style="margin-bottom:0;">🌡️ Growing Degree Days (GDD)</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);">Base 50°F · From last frost date · ${gddDaysLogged} days of data</div>
+      </div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;margin-bottom:16px;">
+        <div style="text-align:center;background:var(--green-bg);border-radius:12px;padding:16px 24px;">
+          <div style="font-size:2rem;font-weight:800;color:var(--green-mid);">${totalGDD}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">GDD Accumulated</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          ${gddCrops.map(crop => {
+            const pct = Math.min(100, Math.round((totalGDD / crop.max) * 100));
+            const done = totalGDD >= crop.max;
+            const started = totalGDD >= crop.min;
+            const color = done ? '#22c55e' : started ? '#f59e0b' : 'var(--green-mid)';
+            const label = done ? 'Mature' : started ? 'Growing' : 'Building';
+            return '<div style="background:var(--green-bg);border-radius:8px;padding:8px;">'
+              + '<div style="font-size:0.8rem;font-weight:600;margin-bottom:4px;">' + crop.icon + ' ' + crop.name + '</div>'
+              + '<div style="background:var(--border);border-radius:4px;height:6px;margin-bottom:4px;">'
+              + '<div style="background:' + color + ';border-radius:4px;height:6px;width:' + pct + '%;transition:width 0.3s;"></div>'
+              + '</div>'
+              + '<div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-muted);">'
+              + '<span style="color:' + color + ';">' + label + '</span>'
+              + '<span>' + pct + '%</span>'
+              + '</div>'
+              + '</div>';
+          }).join('')}
+        </div>
+      </div>
+      ${gddDaysLogged === 0 ? '<div style="color:var(--text-muted);font-size:0.85rem;">No weather data logged since your last frost date. Log weather daily to track GDD accurately.</div>' : ''}
+    </div>` : ''}
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
       <div class="card">
         <div class="card-title">❄️ Frost History</div>
@@ -3403,11 +3467,14 @@ function renderWeather() {
         </div>
       </div>
       <div class="card">
-        <div class="card-title">📊 Recent Weather Log</div>
-        ${state.weatherLog.slice(0, 10).map(w => `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div class="card-title" style="margin-bottom:0;">📊 Recent Weather Log</div>
+          ${state.weatherLog.length > 10 ? `<button class="btn btn-secondary btn-sm" onclick="toggleWeatherLog()" id="weather-log-toggle">${state._showAllWeather ? 'Show Less' : 'View All (' + state.weatherLog.length + ')'}</button>` : ''}
+        </div>
+        ${(state._showAllWeather ? state.weatherLog : state.weatherLog.slice(0, 10)).map(w => `
           <div onclick="showWeatherDetail(${w.id})" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;font-size:0.82rem;cursor:pointer;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
             <div>
-              <span style="font-weight:600;">${new Date(w.log_date).toLocaleDateString('en-US', {month:'short', day:'numeric'})}</span>
+              <span style="font-weight:600;">${new Date(w.log_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</span>
               <span style="color:var(--text-muted);margin-left:6px;">${w.condition || ''}</span>
               ${w.source === 'manual' ? '<span style="color:var(--green-mid);font-size:0.72rem;margin-left:4px;">✏️</span>' : ''}
             </div>
