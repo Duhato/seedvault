@@ -2285,6 +2285,67 @@ async function deleteGermination(id) {
   await api('/api/germination/' + id, 'DELETE'); await loadAll(); render();
 }
 
+function showLocationDetail(id) {
+  const loc = state.locations.find(l => l.id === id);
+  if (!loc) return;
+  const currentYear = new Date().getFullYear();
+  const plants = state.plants.filter(p => p.location_id === id);
+  const thisYearPlants = plants.filter(p => p.season_year === currentYear);
+  const locAmendments = state.amendments.filter(a => a.location_id === id);
+  const allYears = [...new Set(plants.map(p => p.season_year))].sort((a,b) => b-a);
+
+  openModal('📍 ' + loc.name, `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="background:var(--green-bg);padding:12px;border-radius:8px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Type</span><div style="font-weight:600;">${loc.type}</div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Status</span><div><span class="tag tag-${loc.active ? 'active' : 'complete'}">${loc.active ? 'Active' : 'Inactive'}</span></div></div>
+          ${loc.size_description ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Size</span><div style="font-weight:600;">${loc.size_description}</div></div>` : ''}
+          ${loc.sun_exposure ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Sun</span><div style="font-weight:600;">${loc.sun_exposure}</div></div>` : ''}
+        </div>
+        ${loc.soil_notes ? `<div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">🌱 ${loc.soil_notes}</div>` : ''}
+        ${loc.notes ? `<div style="margin-top:4px;font-size:0.85rem;color:var(--text-muted);">${loc.notes}</div>` : ''}
+      </div>
+
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🪴 Plants This Season (${thisYearPlants.length})</div>
+        ${thisYearPlants.length === 0 ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants this season.</p>' : `
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${thisYearPlants.map(p => `<span class="designation" style="font-size:0.75rem;cursor:pointer;" onclick="closeModal();showPlantDetail('${p.designation}')">${p.designation}${p.selected_for_seed ? ' ⭐' : ''}</span>`).join('')}
+        </div>`}
+      </div>
+
+      ${allYears.filter(y => y !== currentYear).length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">📚 Previous Seasons</div>
+        ${allYears.filter(y => y !== currentYear).map(year => {
+          const yearPlants = plants.filter(p => p.season_year === year);
+          return `<div style="font-size:0.85rem;margin-bottom:4px;"><strong>${year}:</strong> ${yearPlants.map(p => p.designation).join(', ')}</div>`;
+        }).join('')}
+      </div>` : ''}
+
+      ${locAmendments.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌿 Amendment History (${locAmendments.length})</div>
+        ${locAmendments.map(a => `
+          <div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+            <div style="display:flex;justify-content:space-between;">
+              <span><span class="tag tag-active">${a.type}</span>${a.product_name ? ' ' + a.product_name : ''}</span>
+              <span style="color:var(--text-muted);">${new Date(a.amendment_date).toLocaleDateString()}</span>
+            </div>
+            ${a.amount || a.method ? `<div style="color:var(--text-muted);margin-top:4px;">${a.amount || ''} ${a.method || ''}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="closeModal();showAddAmendmentLocation(${id});">🌿 Amend</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal();showEditLocation(${id});">✏️ Edit</button>
+      </div>
+    </div>
+  `);
+}
+
 function renderLocations() {
   return `
     <div class="page-header"><h1 class="page-title">📍 Garden Locations</h1><button class="btn btn-primary" onclick="showAddLocation()">+ Add Location</button></div>
@@ -2293,7 +2354,7 @@ function renderLocations() {
       const plants = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear());
       const locAmendments = state.amendments.filter(a => a.location_id === loc.id).slice(0, 3);
       return `
-        <div class="card">
+        <div class="card" style="cursor:pointer;" onclick="showLocationDetail(${loc.id})">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
@@ -2306,7 +2367,7 @@ function renderLocations() {
               ${loc.soil_notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">🌱 ${loc.soil_notes}</div>` : ''}
               ${loc.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${loc.notes}</div>` : ''}
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <div onclick="event.stopPropagation()" style="display:flex;gap:6px;flex-wrap:wrap;">
               <button class="btn btn-primary btn-sm" onclick="showAddAmendmentLocation(${loc.id})">🌿 Amend</button>
               <button class="btn btn-secondary btn-sm" onclick="showEditLocation(${loc.id})">✏️ Edit</button>
               <button class="btn btn-danger btn-sm" onclick="deleteLocation(${loc.id})">🗑️</button>
@@ -2642,6 +2703,64 @@ async function deleteObservation(id) {
   await api('/api/observations/' + id, 'DELETE'); await loadAll(); render();
 }
 
+function showProjectDetail(code) {
+  const p = state.projects.find(x => x.code === code);
+  if (!p) return;
+  const projectCrosses = state.crosses.filter(c => c.project_code === code);
+  const successCount = projectCrosses.filter(c => c.success === true).length;
+  const failCount = projectCrosses.filter(c => c.success === false).length;
+  const pendingCount = projectCrosses.filter(c => c.success === null).length;
+
+  openModal('🧬 ' + p.name, `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="background:var(--green-bg);padding:12px;border-radius:8px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Code</span><div><span class="designation">${p.code}</span></div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Status</span><div><span class="tag tag-${p.status}">${p.status}</span></div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Started</span><div style="font-weight:600;">${p.started_year}</div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Total Crosses</span><div style="font-weight:600;">${projectCrosses.length}</div></div>
+        </div>
+        ${p.description ? `<div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">${p.description}</div>` : ''}
+      </div>
+
+      ${p.target_traits && p.target_traits.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🎯 Target Traits</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${p.target_traits.map(t => `<span class="tag tag-heirloom">${t}</span>`).join('')}</div>
+      </div>` : ''}
+
+      ${projectCrosses.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌸 Cross Results</div>
+        <div style="display:flex;gap:12px;margin-bottom:12px;">
+          <span style="color:#22c55e;font-weight:600;">✅ ${successCount} success</span>
+          <span style="color:#ef4444;font-weight:600;">❌ ${failCount} failed</span>
+          <span style="color:#f59e0b;font-weight:600;">⏳ ${pendingCount} pending</span>
+        </div>
+        ${projectCrosses.map(c => `
+          <div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">
+              <div>
+                <span class="designation" style="font-size:0.75rem;">${c.mother_designation}</span>
+                <span style="margin:0 6px;">×</span>
+                <span class="designation" style="font-size:0.75rem;">${c.father_designation || '?'}</span>
+              </div>
+              <span style="color:${c.success === true ? '#22c55e' : c.success === false ? '#ef4444' : '#f59e0b'};">${c.success === true ? '✅ Success' : c.success === false ? '❌ Failed' : '⏳ Pending'}</span>
+            </div>
+            ${c.date_pollinated ? `<div style="color:var(--text-muted);margin-top:4px;">Pollinated: ${new Date(c.date_pollinated).toLocaleDateString()}</div>` : ''}
+            ${c.notes ? `<div style="color:var(--text-muted);margin-top:4px;">${c.notes}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>` : '<p style="color:var(--text-muted);font-size:0.9rem;">No crosses logged for this project yet.</p>'}
+
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="closeModal();showEditProject('${code}');">✏️ Edit</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal();showAddCross();">+ Log Cross</button>
+      </div>
+    </div>
+  `);
+}
+
 function renderProjects() {
   return `
     <div class="page-header"><h1 class="page-title">🧬 Breeding Projects</h1><button class="btn btn-primary" onclick="showAddProject()">+ New Project</button></div>
@@ -2649,7 +2768,7 @@ function renderProjects() {
     : state.projects.map(p => {
       const projectCrosses = state.crosses.filter(c => c.project_code === p.code);
       return `
-        <div class="card">
+        <div class="card" style="cursor:pointer;" onclick="showProjectDetail('${p.code}')">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
@@ -2660,7 +2779,7 @@ function renderProjects() {
               <div style="color:var(--text-muted);font-size:0.9rem;">${p.description || 'No description'}</div>
               <div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">Started: ${p.started_year}</div>
             </div>
-            <div style="display:flex;gap:6px;">
+            <div onclick="event.stopPropagation()" style="display:flex;gap:6px;">
               <button class="btn btn-secondary btn-sm" onclick="showEditProject('${p.code}')">✏️ Edit</button>
               <button class="btn btn-danger btn-sm" onclick="deleteProject('${p.code}')">🗑️</button>
             </div>
@@ -2766,6 +2885,10 @@ function renderSettings() {
       <div class="settings-row">
         <div class="settings-row-info"><h4>Sign Out</h4><p>Sign out of SeedVault on this device.</p></div>
         <button class="btn btn-danger" onclick="logout()">⏏️ Sign Out</button>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Install App</h4><p>Add SeedVault to your home screen for quick access.</p></div>
+        <button class="btn btn-secondary" onclick="installPWA()">📱 Install</button>
       </div>
     </div>
     ${isAdmin ? `
@@ -3069,6 +3192,19 @@ async function confirmImport(backup) {
     closeModal(); await loadAll(); render();
     setTimeout(() => alert('✅ Import complete!\n\nImported:\n  Varieties: ' + result.imported.varieties + '\n  Seed Lots: ' + result.imported.seed_lots + '\n  Plants: ' + result.imported.plants), 100);
   } catch (err) { alert('Import failed: ' + err.message); }
+}
+
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+});
+
+function installPWA() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
+  }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
