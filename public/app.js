@@ -383,6 +383,77 @@ function showFullPhoto(path, title) {
   `);
 }
 
+// LINEAGE TREE
+function showLineageTree(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  if (!lot) return;
+
+  // Build lineage chain - find all related lots by variety
+  const varietyLots = state.seedLots
+    .filter(l => l.variety_code === lot.variety_code)
+    .sort((a, b) => a.generation - b.generation);
+
+  // Build ancestor chain
+  function buildChain(desig, visited = new Set()) {
+    if (!desig || visited.has(desig)) return null;
+    visited.add(desig);
+    const l = state.seedLots.find(x => x.designation === desig);
+    if (!l) return { designation: desig, unknown: true };
+    const plants = state.plants.filter(p => p.seed_lot_designation === desig);
+    const children = state.seedLots.filter(x =>
+      x.mother_designation && plants.some(p => p.designation === x.mother_designation) ||
+      x.variety_code === l.variety_code && x.generation === l.generation + 1
+    );
+    return {
+      designation: desig,
+      lot: l,
+      plants: plants.length,
+      children: children.map(c => buildChain(c.designation, visited)).filter(Boolean)
+    };
+  }
+
+  // Find root — G0 or earliest generation of this variety
+  const root = varietyLots[0];
+  const chain = buildChain(root.designation);
+
+  function renderNode(node, depth = 0, isTarget = false) {
+    if (!node) return '';
+    const isCurrentLot = node.designation === designation;
+    const bgColor = isCurrentLot ? 'var(--green-mid)' : 'var(--green-bg)';
+    const textColor = isCurrentLot ? '#fff' : 'var(--text)';
+    const borderColor = isCurrentLot ? 'var(--green-mid)' : 'var(--border)';
+    const l = node.lot;
+    return `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:0;">
+        ${depth > 0 ? '<div style="width:2px;height:20px;background:var(--border);"></div>' : ''}
+        <div style="background:${bgColor};border:2px solid ${borderColor};border-radius:8px;padding:10px 14px;min-width:180px;text-align:center;cursor:pointer;" onclick="closeModal();showSeedLotDetail('${node.designation}')">
+          <div style="font-family:monospace;font-size:0.75rem;color:${isCurrentLot ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)'};">${node.designation}</div>
+          ${l ? `<div style="font-weight:700;font-size:0.9rem;color:${textColor};margin-top:2px;">${l.variety_name || l.variety_code}</div>` : ''}
+          ${l ? `<div style="font-size:0.75rem;color:${isCurrentLot ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)'};">G${l.generation} · ${l.year_saved}</div>` : ''}
+          ${node.plants > 0 ? `<div style="font-size:0.75rem;color:${isCurrentLot ? 'rgba(255,255,255,0.7)' : 'var(--green-mid)'};">${node.plants} plant${node.plants !== 1 ? 's' : ''} grown</div>` : ''}
+        </div>
+        ${node.children && node.children.length > 0 ? `
+          <div style="display:flex;gap:16px;align-items:flex-start;">
+            ${node.children.map(child => renderNode(child, depth + 1)).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  openModal('🌿 Lineage — ' + (lot.variety_name || lot.variety_code), `
+    <div style="overflow-x:auto;padding:8px;">
+      <div style="display:flex;justify-content:center;min-width:300px;">
+        ${chain ? renderNode(chain) : '<p style="color:var(--text-muted);">No lineage data found.</p>'}
+      </div>
+    </div>
+    <div style="margin-top:16px;font-size:0.85rem;color:var(--text-muted);text-align:center;">
+      Highlighted node is the current seed lot. Click any node to view details.
+    </div>
+    <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>
+  `);
+}
+
 // SEED LOT DETAIL VIEW
 function showSeedLotDetail(designation) {
   const lot = state.seedLots.find(l => l.designation === designation);
@@ -479,6 +550,7 @@ function showSeedLotDetail(designation) {
         <button class="btn btn-primary btn-sm" onclick="closeModal(); showEditSeedLot('${designation}');">✏️ Edit</button>
         <button class="btn btn-brown btn-sm" onclick="closeModal(); showPacketPhotos('${designation}');">📷 Photos</button>
         <button class="btn btn-secondary btn-sm" onclick="closeModal(); showAddPlants('${designation}');">+ Add Plants</button>
+        <button class="btn btn-secondary btn-sm" onclick="showLineageTree('${designation}');">🌿 Lineage</button>
       </div>
     </div>
   `);
@@ -642,8 +714,39 @@ async function deleteVariety(code) {
 function renderSeedLots() {
   const currentYear = new Date().getFullYear();
   const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3 };
+  const searchTerm = (document.getElementById('seedlot-search')?.value || '').toLowerCase();
+  const filterSpecies = document.getElementById('seedlot-filter-species')?.value || '';
+  const filterGen = document.getElementById('seedlot-filter-gen')?.value || '';
+  let filteredLots = state.seedLots.filter(lot => {
+    const matchSearch = !searchTerm ||
+      lot.designation.toLowerCase().includes(searchTerm) ||
+      (lot.variety_name || '').toLowerCase().includes(searchTerm) ||
+      (lot.storage_location || '').toLowerCase().includes(searchTerm) ||
+      (lot.lot_number || '').toLowerCase().includes(searchTerm);
+    const matchSpecies = !filterSpecies || lot.species_code === filterSpecies;
+    const matchGen = !filterGen || String(lot.generation) === filterGen;
+    return matchSearch && matchSpecies && matchGen;
+  });
   return `
     <div class="page-header"><h1 class="page-title">🫙 Seed Lots</h1><button class="btn btn-primary" onclick="showAddSeedLot()">+ Add Seed Lot</button></div>
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="seedlot-search" placeholder="🔍 Search lots..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="seedlot-filter-species" style="max-width:150px;" onchange="render()">
+          <option value="">All Species</option>
+          ${state.species.map(s => `<option value="${s.code}" ${filterSpecies === s.code ? 'selected' : ''}>${s.name}</option>`).join('')}
+        </select>
+        <select class="form-control" id="seedlot-filter-gen" style="max-width:130px;" onchange="render()">
+          <option value="">All Generations</option>
+          <option value="0" ${filterGen === '0' ? 'selected' : ''}>G0 — Commercial</option>
+          <option value="1" ${filterGen === '1' ? 'selected' : ''}>G1 — First Saved</option>
+          <option value="2" ${filterGen === '2' ? 'selected' : ''}>G2</option>
+          <option value="3" ${filterGen === '3' ? 'selected' : ''}>G3+</option>
+        </select>
+        ${searchTerm || filterSpecies || filterGen ? `<button class="btn btn-secondary btn-sm" onclick="clearSeedLotFilters()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredLots.length} of ${state.seedLots.length} lots</span>
+      </div>
+    </div>
     <div class="card">
       ${filteredLots.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>${state.seedLots.length === 0 ? 'No seed lots yet.' : 'No lots match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
