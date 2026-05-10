@@ -925,8 +925,8 @@ function renderVarieties() {
             <td>${v.source || '—'}</td><td>${v.year_acquired || '—'}</td>
             <td><span class="gen-badge">${lots}</span></td>
             <td onclick="event.stopPropagation()" style="display:flex;gap:4px;">
-              <button class="btn btn-secondary btn-sm" onclick="showEditVariety('${v.code}')">✏️ Edit</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteVariety('${v.code}')">🗑️</button>
+              <button class="btn btn-secondary btn-sm" data-tip="Edit this variety" onclick="showEditVariety('${v.code}')">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" data-tip="Delete this variety" onclick="deleteVariety('${v.code}')">🗑️</button>
             </td>
           </tr>`;
         }).join('')}</tbody>
@@ -2155,8 +2155,8 @@ function renderAmendments() {
             ${a.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${a.notes}</div>` : ''}
           </div>
           <div style="display:flex;gap:4px;">
-            <button class="btn btn-secondary btn-sm" onclick="showEditAmendment(${a.id})">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteAmendment(${a.id})">🗑️</button>
+            <button class="btn btn-secondary btn-sm" data-tip="Edit amendment" onclick="showEditAmendment(${a.id})">✏️</button>
+            <button class="btn btn-danger btn-sm" data-tip="Delete amendment" onclick="deleteAmendment(${a.id})">🗑️</button>
           </div>
         </div>
       </div>
@@ -2331,8 +2331,8 @@ function renderHarvest() {
           <td>${h.seed_count || '—'}</td>
           <td>${h.processing_method || '—'}</td>
           <td style="display:flex;gap:4px;">
-            <button class="btn btn-secondary btn-sm" onclick="showEditHarvest(${h.id})">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteHarvest(${h.id})">🗑️</button>
+            <button class="btn btn-secondary btn-sm" data-tip="Edit harvest record" onclick="showEditHarvest(${h.id})">✏️</button>
+            <button class="btn btn-danger btn-sm" data-tip="Delete harvest record" onclick="deleteHarvest(${h.id})">🗑️</button>
           </td>
         </tr>`).join('')}</tbody>
       </table></div>`}
@@ -2436,9 +2436,9 @@ function renderGermination() {
             <td>${g.seeds_thinned !== null ? g.seeds_thinned : '—'}</td>
             <td>${g.plants_remaining !== null ? g.plants_remaining : '—'}</td>
             <td style="display:flex;gap:4px;flex-wrap:wrap;">
-              ${g.seeds_germinated === null ? `<button class="btn btn-primary btn-sm" onclick="showUpdateGermination(${g.id})">📊 Update</button>` : ''}
-              ${g.seeds_thinned === null && g.seeds_germinated !== null ? `<button class="btn btn-brown btn-sm" onclick="showThinningLog(${g.id})">✂️ Thinning</button>` : ''}
-              <button class="btn btn-danger btn-sm" onclick="deleteGermination(${g.id})">🗑️</button>
+              ${g.seeds_germinated === null ? `<button class="btn btn-primary btn-sm" data-tip="Enter germination results" onclick="showUpdateGermination(${g.id})">📊 Update</button>` : ''}
+              ${g.seeds_thinned === null && g.seeds_germinated !== null ? `<button class="btn btn-brown btn-sm" data-tip="Log seedling thinning" onclick="showThinningLog(${g.id})">✂️ Thinning</button>` : ''}
+              <button class="btn btn-danger btn-sm" data-tip="Delete this test" onclick="deleteGermination(${g.id})">🗑️</button>
             </td>
           </tr>`;
         }).join('')}</tbody>
@@ -2642,9 +2642,9 @@ function renderLocations() {
               ${loc.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${loc.notes}</div>` : ''}
             </div>
             <div onclick="event.stopPropagation()" style="display:flex;gap:6px;flex-wrap:wrap;">
-              <button class="btn btn-primary btn-sm" onclick="showAddAmendmentLocation(${loc.id})">🌿 Amend</button>
-              <button class="btn btn-secondary btn-sm" onclick="showEditLocation(${loc.id})">✏️ Edit</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteLocation(${loc.id})">🗑️</button>
+              <button class="btn btn-primary btn-sm" data-tip="Log amendment for this location" onclick="showAddAmendmentLocation(${loc.id})">🌿 Amend</button>
+              <button class="btn btn-secondary btn-sm" data-tip="Edit location details" onclick="showEditLocation(${loc.id})">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" data-tip="Delete this location" onclick="deleteLocation(${loc.id})">🗑️</button>
             </div>
           </div>
           <div style="margin-top:16px;">
@@ -2785,8 +2785,8 @@ function renderCrosses() {
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
               <span style="font-weight:700;color:${statusColor};">${statusText}</span>
               <div style="display:flex;gap:4px;">
-                <button class="btn btn-secondary btn-sm" onclick="showUpdateCross(${c.id})">✏️ Update</button>
-                <button class="btn btn-danger btn-sm" onclick="deleteCross(${c.id})">🗑️</button>
+                <button class="btn btn-secondary btn-sm" data-tip="Update cross pollination result" onclick="showUpdateCross(${c.id})">✏️ Update</button>
+                <button class="btn btn-danger btn-sm" data-tip="Delete this cross record" onclick="deleteCross(${c.id})">🗑️</button>
               </div>
             </div>
           </div>
@@ -2919,8 +2919,8 @@ function renderObservations() {
             ${o.notes ? `<div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${o.notes}</div>` : ''}
           </div>
           <div style="display:flex;gap:4px;">
-            <button class="btn btn-secondary btn-sm" onclick="showEditObservation(${o.id})">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteObservation(${o.id})">🗑️</button>
+            <button class="btn btn-secondary btn-sm" data-tip="Edit observation" onclick="showEditObservation(${o.id})">✏️</button>
+            <button class="btn btn-danger btn-sm" data-tip="Delete observation" onclick="deleteObservation(${o.id})">🗑️</button>
           </div>
         </div>
       </div>
@@ -3077,8 +3077,8 @@ function renderProjects() {
               <div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">Started: ${p.started_year}</div>
             </div>
             <div onclick="event.stopPropagation()" style="display:flex;gap:6px;">
-              <button class="btn btn-secondary btn-sm" onclick="showEditProject('${p.code}')">✏️ Edit</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteProject('${p.code}')">🗑️</button>
+              <button class="btn btn-secondary btn-sm" data-tip="Edit breeding project" onclick="showEditProject('${p.code}')">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" data-tip="Delete this project" onclick="deleteProject('${p.code}')">🗑️</button>
             </div>
           </div>
           ${p.target_traits && p.target_traits.length > 0 ? `
