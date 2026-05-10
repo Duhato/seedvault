@@ -1086,7 +1086,7 @@ app.get('/api/viability', authMiddleware, async (req, res) => {
 // BACKUP
 app.get('/api/backup/export-zip', authMiddleware, async (req, res) => {
   try {
-    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources] = await Promise.all([
+    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources, weatherLog, frostEvents] = await Promise.all([
       pool.query('SELECT * FROM species ORDER BY code'),
       pool.query('SELECT * FROM varieties ORDER BY code'),
       pool.query('SELECT * FROM seed_lots ORDER BY designation'),
@@ -1099,6 +1099,8 @@ app.get('/api/backup/export-zip', authMiddleware, async (req, res) => {
       pool.query('SELECT * FROM fruit_observations ORDER BY observation_date'),
       pool.query('SELECT * FROM garden_locations ORDER BY name'),
       pool.query('SELECT * FROM seed_sources ORDER BY name'),
+      pool.query('SELECT * FROM weather_logs ORDER BY log_date'),
+      pool.query('SELECT * FROM frost_events ORDER BY event_date'),
     ]);
 
     const filename = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.zip';
@@ -1114,7 +1116,8 @@ app.get('/api/backup/export-zip', authMiddleware, async (req, res) => {
         plants: plants.rows, breeding_projects: projects.rows, harvest_log: harvest.rows,
         germination_tests: germination.rows, plant_amendments: amendments.rows,
         cross_pollinations: crosses.rows, fruit_observations: observations.rows,
-        garden_locations: locations.rows, seed_sources: sources.rows }
+        garden_locations: locations.rows, seed_sources: sources.rows,
+        weather_logs: weatherLog.rows, frost_events: frostEvents.rows }
     };
     archive.append(JSON.stringify(data, null, 2), { name: 'seedvault-backup.json' });
 
@@ -1174,6 +1177,8 @@ app.post('/api/backup/import-zip', authMiddleware, async (req, res) => {
       for (const a of (data.plant_amendments || [])) { const r = await client.query('INSERT INTO plant_amendments (plant_designation, amendment_date, type, product_name, amount, method, notes) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [a.plant_designation, a.amendment_date, a.type, a.product_name, a.amount, a.method, a.notes]); r.rowCount > 0 ? imported.plant_amendments++ : skipped.plant_amendments++; }
       for (const c of (data.cross_pollinations || [])) { const r = await client.query('INSERT INTO cross_pollinations (mother_designation, father_designation, project_code, date_bagged, date_pollinated, date_unbagged, success, fruit_set, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', [c.mother_designation, c.father_designation, c.project_code, c.date_bagged, c.date_pollinated, c.date_unbagged, c.success, c.fruit_set, c.notes]); r.rowCount > 0 ? imported.cross_pollinations++ : skipped.cross_pollinations++; }
       for (const o of (data.fruit_observations || [])) { const r = await client.query('INSERT INTO fruit_observations (plant_designation, observation_date, fruit_count, avg_length_inches, avg_diameter_inches, color, texture, flavor_notes, health_notes, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *', [o.plant_designation, o.observation_date, o.fruit_count, o.avg_length_inches, o.avg_diameter_inches, o.color, o.texture, o.flavor_notes, o.health_notes, o.notes]); r.rowCount > 0 ? imported.fruit_observations++ : skipped.fruit_observations++; }
+      for (const w of (data.weather_logs || [])) { await client.query('INSERT INTO weather_logs (log_date, source, condition, high_temp_f, low_temp_f, humidity_pct, precip_inches, wind_mph, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (log_date) DO NOTHING', [w.log_date, w.source, w.condition, w.high_temp_f, w.low_temp_f, w.humidity_pct, w.precip_inches, w.wind_mph, w.notes]); }
+      for (const f of (data.frost_events || [])) { await client.query('INSERT INTO frost_events (year, event_type, event_date, confirmed, notes) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING', [f.year, f.event_type, f.event_date, f.confirmed, f.notes]); }
       await client.query('COMMIT');
       res.json({ success: true, imported, skipped });
     } catch (err) { await client.query('ROLLBACK'); console.error(err); res.status(500).json({ error: 'Server error: ' + err.message }); }
@@ -1183,7 +1188,7 @@ app.post('/api/backup/import-zip', authMiddleware, async (req, res) => {
 
 app.get('/api/backup/export', authMiddleware, async (req, res) => {
   try {
-    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources] = await Promise.all([
+    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources, weatherLog, frostEvents] = await Promise.all([
       pool.query('SELECT * FROM species ORDER BY code'),
       pool.query('SELECT * FROM varieties ORDER BY code'),
       pool.query('SELECT * FROM seed_lots ORDER BY designation'),
@@ -1196,6 +1201,8 @@ app.get('/api/backup/export', authMiddleware, async (req, res) => {
       pool.query('SELECT * FROM fruit_observations ORDER BY observation_date'),
       pool.query('SELECT * FROM garden_locations ORDER BY name'),
       pool.query('SELECT * FROM seed_sources ORDER BY name'),
+      pool.query('SELECT * FROM weather_logs ORDER BY log_date'),
+      pool.query('SELECT * FROM frost_events ORDER BY event_date'),
     ]);
     const filename = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.json';
     res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
@@ -1205,7 +1212,8 @@ app.get('/api/backup/export', authMiddleware, async (req, res) => {
       plants: plants.rows, breeding_projects: projects.rows, harvest_log: harvest.rows,
       germination_tests: germination.rows, plant_amendments: amendments.rows,
       cross_pollinations: crosses.rows, fruit_observations: observations.rows,
-      garden_locations: locations.rows, seed_sources: sources.rows
+      garden_locations: locations.rows, seed_sources: sources.rows,
+      weather_logs: weatherLog.rows, frost_events: frostEvents.rows
     }});
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
@@ -1257,6 +1265,8 @@ app.post('/api/backup/import', authMiddleware, async (req, res) => {
     for (const c of (data.cross_pollinations || [])) { const r = await client.query('INSERT INTO cross_pollinations (mother_designation, father_designation, project_code, date_bagged, date_pollinated, date_unbagged, success, fruit_set, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', [c.mother_designation, c.father_designation, c.project_code, c.date_bagged, c.date_pollinated, c.date_unbagged, c.success, c.fruit_set, c.notes]); r.rowCount > 0 ? imported.cross_pollinations++ : skipped.cross_pollinations++; }
     for (const o of (data.fruit_observations || [])) { const r = await client.query('INSERT INTO fruit_observations (plant_designation, observation_date, fruit_count, avg_length_inches, avg_diameter_inches, color, texture, flavor_notes, health_notes, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *', [o.plant_designation, o.observation_date, o.fruit_count, o.avg_length_inches, o.avg_diameter_inches, o.color, o.texture, o.flavor_notes, o.health_notes, o.notes]); r.rowCount > 0 ? imported.fruit_observations++ : skipped.fruit_observations++; }
     for (const ss of (data.seed_sources || [])) { const r = await client.query('INSERT INTO seed_sources (name, website, type, rating, notes) VALUES ($1, $2, $3, $4, $5) RETURNING *', [ss.name, ss.website, ss.type, ss.rating, ss.notes]); r.rowCount > 0 ? imported.seed_sources++ : skipped.seed_sources++; }
+    for (const w of (data.weather_logs || [])) { await client.query('INSERT INTO weather_logs (log_date, source, condition, high_temp_f, low_temp_f, humidity_pct, precip_inches, wind_mph, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (log_date) DO NOTHING', [w.log_date, w.source, w.condition, w.high_temp_f, w.low_temp_f, w.humidity_pct, w.precip_inches, w.wind_mph, w.notes]); }
+    for (const f of (data.frost_events || [])) { await client.query('INSERT INTO frost_events (year, event_type, event_date, confirmed, notes) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING', [f.year, f.event_type, f.event_date, f.confirmed, f.notes]); }
     await client.query('COMMIT');
     res.json({ success: true, imported, skipped });
   } catch (err) { await client.query('ROLLBACK'); res.status(500).json({ error: 'Server error' }); }

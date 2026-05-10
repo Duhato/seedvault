@@ -3405,16 +3405,17 @@ function renderWeather() {
       <div class="card">
         <div class="card-title">📊 Recent Weather Log</div>
         ${state.weatherLog.slice(0, 10).map(w => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;font-size:0.82rem;">
+          <div onclick="showWeatherDetail(${w.id})" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;font-size:0.82rem;cursor:pointer;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
             <div>
               <span style="font-weight:600;">${new Date(w.log_date).toLocaleDateString('en-US', {month:'short', day:'numeric'})}</span>
               <span style="color:var(--text-muted);margin-left:6px;">${w.condition || ''}</span>
               ${w.source === 'manual' ? '<span style="color:var(--green-mid);font-size:0.72rem;margin-left:4px;">✏️</span>' : ''}
             </div>
-            <div style="display:flex;gap:8px;color:var(--text-muted);">
+            <div style="display:flex;gap:8px;color:var(--text-muted);align-items:center;">
               ${w.high_temp_f ? `<span>H:${Math.round(w.high_temp_f)}°</span>` : ''}
               ${w.low_temp_f ? `<span>L:${Math.round(w.low_temp_f)}°</span>` : ''}
               ${w.precip_inches > 0 ? `<span>🌧️${w.precip_inches}"</span>` : ''}
+              <span style="color:var(--green-mid);font-size:0.75rem;">›</span>
             </div>
           </div>
         `).join('')}
@@ -3441,6 +3442,37 @@ function renderWeather() {
       })()}
     </div>
   `;
+}
+
+function showWeatherDetail(id) {
+  const w = state.weatherLog.find(x => x.id === id);
+  if (!w) return;
+  const date = new Date(w.log_date).toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  const rows = [
+    ['Date', date],
+    ['Condition', w.condition || '—'],
+    ['High Temp', w.high_temp_f != null ? Math.round(w.high_temp_f) + '°F' : '—'],
+    ['Low Temp', w.low_temp_f != null ? Math.round(w.low_temp_f) + '°F' : '—'],
+    ['Humidity', w.humidity_pct != null ? w.humidity_pct + '%' : '—'],
+    ['Precipitation', w.precip_inches != null && w.precip_inches > 0 ? w.precip_inches + '"' : '—'],
+    ['Wind Speed', w.wind_mph != null ? w.wind_mph + ' mph' : '—'],
+    ['Source', w.source === 'manual' ? '✏️ Manual entry' : '🌐 Auto-logged'],
+    ['Notes', w.notes || '—'],
+  ];
+  openModal('🌤️ Weather — ' + new Date(w.log_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}), `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:16px;">
+      ${rows.map(([label, val]) => `
+        <div style="background:var(--green-bg);border-radius:8px;padding:10px 12px;">
+          <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">${label}</div>
+          <div style="font-weight:600;font-size:0.95rem;">${val}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" onclick="closeModal();showEditWeatherLog(${w.id})">✏️ Edit</button>
+    </div>
+  `);
 }
 
 function showEditFrostEvent(id, year, event_type, event_date, confirmed) {
