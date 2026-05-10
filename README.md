@@ -21,6 +21,9 @@ A self-hosted seed saving and plant breeding tracker for home gardeners and seed
 - 🌙 **Dark Mode** — Full dark theme support
 - 💾 **Backup/Restore** — JSON and CSV export/import
 
+## Docker Hub
+Available tags: `latest`, `1.1.0`
+
 ## Quick Start
 
 ### Requirements
