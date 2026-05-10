@@ -1010,6 +1010,13 @@ app.get('/api/weather/summary', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+app.delete('/api/frost-events/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { await pool.query('DELETE FROM frost_events WHERE id=$1', [id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 // USER SETTINGS
 app.get('/api/settings', authMiddleware, async (req, res) => {
   try {

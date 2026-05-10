@@ -186,9 +186,13 @@ function render() {
 
 function formatFrostDate(mmdd) {
   if (!mmdd) return '—';
-  const [m, d] = mmdd.split('-');
+  const parts = mmdd.split('-');
+  if (parts.length < 2) return mmdd;
+  const m = parseInt(parts[0]);
+  const d = parseInt(parts[1]);
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return months[parseInt(m)-1] + ' ' + parseInt(d);
+  if (m < 1 || m > 12) return mmdd;
+  return months[m-1] + ' ' + d;
 }
 
 function getPlantingWindow(lot) {
@@ -290,7 +294,7 @@ async function loadWeather() {
         if (item.rain) days[key].rain = true;
       });
       const dayKeys = Object.keys(days).slice(0, 5);
-      let forecastHTML = '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:10px;">';
+      let forecastHTML = '<div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-top:10px;margin-bottom:4px;">5-Day Forecast</div><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;">';
       dayKeys.forEach(key => {
         const d = days[key];
         const hi = Math.round(Math.max(...d.temps));
@@ -3329,7 +3333,7 @@ function renderWeather() {
   const avgHigh = thisYearLog.length > 0 ? Math.round(thisYearLog.reduce((s,w) => s + parseFloat(w.high_temp_f || 0), 0) / thisYearLog.length) : null;
   const avgLow = thisYearLog.length > 0 ? Math.round(thisYearLog.reduce((s,w) => s + parseFloat(w.low_temp_f || 0), 0) / thisYearLog.length) : null;
   const totalPrecip = thisYearLog.reduce((s,w) => s + parseFloat(w.precip_inches || 0), 0).toFixed(2);
-  const frostDays = thisYearLog.filter(w => parseFloat(w.low_temp_f) <= 32).length;
+  const frostDays = state.frostEvents.filter(f => f.year === currentYear && f.confirmed).length;
 
   // Calculate personal frost averages
   const lastSpringFrosts = state.frostEvents.filter(f => f.event_type === 'last_spring' && f.confirmed);
@@ -3365,7 +3369,7 @@ function renderWeather() {
       <div class="stat-card" style="cursor:default;"><div class="stat-number">${thisYearLog.length}</div><div class="stat-label">Days Logged ${currentYear}</div></div>
       <div class="stat-card" style="cursor:default;"><div class="stat-number">${avgHigh !== null ? avgHigh + '°' : '—'}</div><div class="stat-label">Avg High ${currentYear}</div></div>
       <div class="stat-card" style="cursor:default;"><div class="stat-number">${totalPrecip}"</div><div class="stat-label">Total Rain ${currentYear}</div></div>
-      <div class="stat-card" style="cursor:default;"><div class="stat-number">${frostDays}</div><div class="stat-label">Frost Days ${currentYear}</div></div>
+      <div class="stat-card" style="cursor:default;"><div class="stat-number">${frostDays}</div><div class="stat-label">Confirmed Frost Events ${currentYear}</div></div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
@@ -3390,6 +3394,8 @@ function renderWeather() {
               <div style="display:flex;align-items:center;gap:8px;">
                 <span style="font-weight:600;">${new Date(f.event_date).toLocaleDateString('en-US', {month:'short', day:'numeric'})}</span>
                 ${f.confirmed ? '<span style="color:#22c55e;font-size:0.75rem;">✅ Confirmed</span>' : '<span style="color:#f59e0b;font-size:0.75rem;">Estimated</span>'}
+                <button class="btn btn-secondary btn-sm" style="padding:2px 6px;" onclick="showEditFrostEvent(${f.id}, ${f.year}, '${f.event_type}', '${f.event_date ? f.event_date.split('T')[0] : ''}', ${f.confirmed})">✏️</button>
+                <button class="btn btn-danger btn-sm" style="padding:2px 6px;" onclick="deleteFrostEvent(${f.id})">🗑️</button>
               </div>
             </div>
           `).join('')}
@@ -3406,8 +3412,8 @@ function renderWeather() {
               ${w.source === 'manual' ? '<span style="color:var(--green-mid);font-size:0.72rem;margin-left:4px;">✏️</span>' : ''}
             </div>
             <div style="display:flex;gap:8px;color:var(--text-muted);">
-              ${w.high_temp_f ? `<span>↑${Math.round(w.high_temp_f)}°</span>` : ''}
-              ${w.low_temp_f ? `<span>↓${Math.round(w.low_temp_f)}°</span>` : ''}
+              ${w.high_temp_f ? `<span>H:${Math.round(w.high_temp_f)}°</span>` : ''}
+              ${w.low_temp_f ? `<span>L:${Math.round(w.low_temp_f)}°</span>` : ''}
               ${w.precip_inches > 0 ? `<span>🌧️${w.precip_inches}"</span>` : ''}
             </div>
           </div>
@@ -3435,6 +3441,57 @@ function renderWeather() {
       })()}
     </div>
   `;
+}
+
+function showEditFrostEvent(id, year, event_type, event_date, confirmed) {
+  openModal('Edit Frost Event', `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Year</label><input class="form-control" id="f-fyear" type="number" value="${year}"></div>
+      <div class="form-group"><label class="form-label">Event Type</label>
+        <select class="form-control" id="f-ftype">
+          <option value="last_spring" ${event_type === 'last_spring' ? 'selected' : ''}>🌱 Last Spring Frost</option>
+          <option value="first_fall" ${event_type === 'first_fall' ? 'selected' : ''}>❄️ First Fall Frost</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date</label><input class="form-control" id="f-fdate" type="date" value="${event_date}"></div>
+      <div class="form-group"><label class="form-label">Confirmed?</label>
+        <select class="form-control" id="f-fconfirmed">
+          <option value="true" ${confirmed ? 'selected' : ''}>✅ Yes — actual frost observed</option>
+          <option value="false" ${!confirmed ? 'selected' : ''}>Estimated</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-fnotes" rows="2"></textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitFrostEventEdit()">Save Changes</button>
+    </div>
+  `);
+}
+
+async function submitFrostEventEdit() {
+  await api('/api/frost-events', 'POST', {
+    year: parseInt(document.getElementById('f-fyear').value),
+    event_type: document.getElementById('f-ftype').value,
+    event_date: document.getElementById('f-fdate').value,
+    confirmed: document.getElementById('f-fconfirmed').value === 'true',
+    notes: document.getElementById('f-fnotes').value
+  });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteFrostEvent(id) {
+  if (!confirm('Delete this frost event?')) return;
+  await api('/api/frost-events/' + id, 'DELETE');
+  await loadAll(); render();
+}
+
+async function deleteWeatherLog(id) {
+  if (!confirm('Delete this weather entry?')) return;
+  await api('/api/weather/' + id, 'DELETE');
+  await loadAll(); render();
 }
 
 function showLogWeather() {
@@ -3595,14 +3652,14 @@ function renderSettings() {
         <div class="settings-row-info"><h4>Last Spring Frost</h4><p>Average date of last spring frost. Used for planting windows.</p></div>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-control" id="s-lastfrost" style="width:120px;" value="${state.settings.last_frost_date || ''}" placeholder="MM-DD e.g. 04-22">
-          <button class="btn btn-secondary" onclick="saveSetting('last_frost_date', document.getElementById('s-lastfrost').value)">Save</button>
+          <button class="btn btn-secondary" onclick="saveFrostDate('last_frost_date', document.getElementById('s-lastfrost').value)">Save</button>
         </div>
       </div>
       <div class="settings-row">
         <div class="settings-row-info"><h4>First Fall Frost</h4><p>Average date of first fall frost. Used for last planting date calculations.</p></div>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-control" id="s-firstfrost" style="width:120px;" value="${state.settings.first_frost_date || ''}" placeholder="MM-DD e.g. 10-15">
-          <button class="btn btn-secondary" onclick="saveSetting('first_frost_date', document.getElementById('s-firstfrost').value)">Save</button>
+          <button class="btn btn-secondary" onclick="saveFrostDate('first_frost_date', document.getElementById('s-firstfrost').value)">Save</button>
         </div>
       </div>
     </div>
@@ -3778,6 +3835,17 @@ function printVarietyReport() {
     </body></html>
   `);
   printWindow.document.close();
+}
+
+async function saveFrostDate(key, value) {
+  // Normalize to MM-DD format
+  if (value) {
+    const parts = value.split('-');
+    if (parts.length === 2) {
+      value = parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
+    }
+  }
+  await saveSetting(key, value);
 }
 
 async function saveSetting(key, value) {
