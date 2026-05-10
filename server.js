@@ -208,6 +208,12 @@ async function initDB() {
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS user_settings (
+        id SERIAL PRIMARY KEY,
+        key VARCHAR(50) UNIQUE NOT NULL,
+        value TEXT,
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
       CREATE TABLE IF NOT EXISTS seed_sources (
         id SERIAL PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
@@ -868,6 +874,25 @@ app.delete('/api/observations/:id', authMiddleware, async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid id' });
   try { await pool.query('DELETE FROM fruit_observations WHERE id=$1', [id]); res.json({ success: true }); }
   catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// USER SETTINGS
+app.get('/api/settings', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT key, value FROM user_settings ORDER BY key');
+    const settings = {};
+    result.rows.forEach(r => settings[r.key] = r.value);
+    res.json(settings);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.put('/api/settings', authMiddleware, async (req, res) => {
+  try {
+    const { key, value } = req.body;
+    if (!key) return res.status(400).json({ error: 'Key required' });
+    await pool.query('INSERT INTO user_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=NOW()', [sanitizeString(key, 50), sanitizeString(value, 255)]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // STATS

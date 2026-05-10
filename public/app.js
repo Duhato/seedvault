@@ -99,7 +99,8 @@ const state = {
   varieties: [], seedLots: [], plants: [], projects: [],
   harvest: [], species: [], stats: {}, viability: [],
   germination: [], users: [], locations: [], sources: [],
-  crosses: [], observations: [], amendments: []
+  crosses: [], observations: [], amendments: [],
+  settings: {}
 };
 
 async function api(path, method = 'GET', body = null) {
@@ -122,8 +123,9 @@ async function loadAll() {
     api('/api/harvest'), api('/api/species'), api('/api/stats'), api('/api/viability'),
     api('/api/germination'), api('/api/locations'), api('/api/sources'),
     api('/api/crosses'), api('/api/observations'), api('/api/amendments'),
+    api('/api/settings'),
   ];
-  if (getRole() === 'admin') calls.push(api('/api/users'));
+  if (getRole() === 'admin') calls.push(api('/api/users')); // index 15
   const results = await Promise.all(calls);
   state.varieties = Array.isArray(results[0]) ? results[0] : [];
   state.seedLots = Array.isArray(results[1]) ? results[1] : [];
@@ -139,7 +141,8 @@ async function loadAll() {
   state.crosses = Array.isArray(results[11]) ? results[11] : [];
   state.observations = Array.isArray(results[12]) ? results[12] : [];
   state.amendments = Array.isArray(results[13]) ? results[13] : [];
-  state.users = results[14] && Array.isArray(results[14]) ? results[14] : [];
+  state.settings = results[14] && !Array.isArray(results[14]) ? results[14] : {};
+  state.users = results[15] && Array.isArray(results[15]) ? results[15] : [];
 }
 
 function navigate(page) {
@@ -161,7 +164,7 @@ function closeModal() { document.getElementById('modal-overlay').classList.add('
 function render() {
   const main = document.getElementById('main-content');
   switch (state.page) {
-    case 'dashboard': main.innerHTML = renderDashboard(); break;
+    case 'dashboard': main.innerHTML = renderDashboard(); setTimeout(loadWeather, 100); break;
     case 'varieties': main.innerHTML = renderVarieties(); break;
     case 'seedlots': main.innerHTML = renderSeedLots(); break;
     case 'plants': main.innerHTML = renderPlants(); break;
@@ -174,6 +177,92 @@ function render() {
     case 'amendments': main.innerHTML = renderAmendments(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
   }
+}
+
+function formatFrostDate(mmdd) {
+  if (!mmdd) return '—';
+  const [m, d] = mmdd.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[parseInt(m)-1] + ' ' + parseInt(d);
+}
+
+function getPlantingWindow(lot) {
+  const settings = state.settings;
+  if (!settings.last_frost_date) return '';
+  const year = new Date().getFullYear();
+  const [lm, ld] = settings.last_frost_date.split('-').map(Number);
+  const [fm, fd] = (settings.first_frost_date || '10-15').split('-').map(Number);
+  const lastFrost = new Date(year, lm-1, ld);
+  const firstFrost = new Date(year, fm-1, fd);
+  const today = new Date();
+  let lines = [];
+
+  if (lot.start_indoors_weeks && !lot.direct_sow) {
+    const startIndoors = new Date(lastFrost);
+    startIndoors.setDate(startIndoors.getDate() - (lot.start_indoors_weeks * 7));
+    const isPast = startIndoors < today;
+    lines.push(`<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <span>🏠 Start Indoors</span>
+      <span style="font-weight:600;color:${isPast ? '#ef4444' : '#22c55e'};">${startIndoors.toLocaleDateString('en-US', {month:'short', day:'numeric'})}${isPast ? ' (past)' : ''}</span>
+    </div>`);
+  }
+
+  if (lot.direct_sow !== false) {
+    const directSow = new Date(lastFrost);
+    const isPast = directSow < today;
+    lines.push(`<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <span>🌱 Direct Sow After</span>
+      <span style="font-weight:600;color:${isPast ? '#f59e0b' : '#22c55e'};">${directSow.toLocaleDateString('en-US', {month:'short', day:'numeric'})}${isPast ? ' (ongoing)' : ''}</span>
+    </div>`);
+  }
+
+  if (lot.days_to_harvest) {
+    const dth = parseInt(lot.days_to_harvest) || parseInt((lot.days_to_harvest || '').split('-')[1]) || 70;
+    const lastPlant = new Date(firstFrost);
+    lastPlant.setDate(lastPlant.getDate() - dth);
+    const isPast = lastPlant < today;
+    lines.push(`<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <span>⏰ Last Planting Date</span>
+      <span style="font-weight:600;color:${isPast ? '#ef4444' : '#22c55e'};">${lastPlant.toLocaleDateString('en-US', {month:'short', day:'numeric'})}${isPast ? ' (past)' : ''}</span>
+    </div>`);
+
+    if (lot.days_to_harvest) {
+      lines.push(`<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+        <span>🎯 Expected Harvest</span>
+        <span style="font-weight:600;">${lot.days_to_harvest} days after planting</span>
+      </div>`);
+    }
+  }
+
+  if (lot.soil_temp_min_f) {
+    lines.push(`<div style="display:flex;justify-content:space-between;">
+      <span>🌡️ Min Soil Temp</span>
+      <span style="font-weight:600;">${lot.soil_temp_min_f}°F</span>
+    </div>`);
+  }
+
+  return lines.length > 0 ? lines.join('') : '<p style="color:var(--text-muted);font-size:0.85rem;">Add growing info to see planting dates.</p>';
+}
+
+async function loadWeather() {
+  const zip = state.settings.zip_code;
+  if (!zip) return;
+  const weatherEl = document.getElementById('weather-data');
+  if (!weatherEl) return;
+  try {
+    // Convert zip to lat/long using free geocoding
+    const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${zip}&count=1&language=en&format=json`).then(r => r.json());
+    if (!geo.results || geo.results.length === 0) { weatherEl.textContent = 'Location not found'; return; }
+    const { latitude, longitude, name, admin1 } = geo.results[0];
+    const weather = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,precipitation,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`).then(r => r.json());
+    const c = weather.current;
+    const codes = {0:'☀️ Clear',1:'🌤️ Mainly Clear',2:'⛅ Partly Cloudy',3:'☁️ Overcast',45:'🌫️ Foggy',48:'🌫️ Icy Fog',51:'🌦️ Light Drizzle',61:'🌧️ Light Rain',63:'🌧️ Rain',65:'🌧️ Heavy Rain',71:'🌨️ Light Snow',73:'❄️ Snow',75:'❄️ Heavy Snow',80:'🌦️ Showers',95:'⛈️ Thunderstorm'};
+    const desc = codes[c.weather_code] || '🌡️';
+    weatherEl.innerHTML = `<strong style="font-size:1.1rem;">${Math.round(c.temperature_2m)}°F</strong> <span>${desc}</span> <span style="color:var(--text-muted);font-size:0.85rem;">💨 ${Math.round(c.wind_speed_10m)} mph${c.precipitation > 0 ? ' · 🌧️ ' + c.precipitation + '"' : ''}</span>`;
+    if (state.settings.location_name !== (name + ', ' + admin1)) {
+      await api('/api/settings', 'PUT', { key: 'location_name', value: name + ', ' + admin1 });
+    }
+  } catch (err) { if (weatherEl) weatherEl.textContent = 'Weather unavailable'; }
 }
 
 function printSeasonSummary() {
@@ -368,6 +457,22 @@ function renderDashboard() {
         <button class="btn btn-secondary btn-sm" onclick="printSeasonSummary()">🖨️ Season Summary</button>
       </div>
     </div>
+    ${state.settings.zip_code ? `
+    <div id="weather-widget" class="card" style="padding:12px 16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);margin-bottom:4px;">🌤️ ${state.settings.location_name || 'Local Weather'}</div>
+          <div id="weather-data" style="font-size:0.9rem;color:var(--text-muted);">Loading weather...</div>
+        </div>
+        ${state.settings.last_frost_date ? `
+        <div style="text-align:right;">
+          <div style="font-size:0.8rem;color:var(--text-muted);">Last Frost</div>
+          <div style="font-weight:600;color:var(--green-mid);">${formatFrostDate(state.settings.last_frost_date)}</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">First Frost</div>
+          <div style="font-weight:600;color:#f59e0b;">${formatFrostDate(state.settings.first_frost_date)}</div>
+        </div>` : ''}
+      </div>
+    </div>` : ''}
     <div class="card" style="padding:12px 16px;">
       <div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);margin-bottom:10px;">⚡ Quick Actions</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -695,6 +800,14 @@ function showSeedLotDetail(designation) {
       </div>` : ''}
 
       ${lot.notes ? `<div><div style="font-weight:700;margin-bottom:4px;font-size:0.9rem;">Notes</div><div style="font-size:0.9rem;color:var(--text-muted);">${lot.notes}</div></div>` : ''}
+
+      ${state.settings.last_frost_date && (lot.days_to_harvest || lot.start_indoors_weeks || lot.direct_sow !== undefined) ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">📅 Planting Window — ${new Date().getFullYear()}</div>
+        <div style="background:var(--green-bg);padding:12px;border-radius:8px;">
+          ${getPlantingWindow(lot)}
+        </div>
+      </div>` : ''}
 
       <div>
         <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🪴 Plants from this lot (${plants.length})</div>
@@ -2948,6 +3061,30 @@ function renderSettings() {
         <button class="btn btn-secondary" onclick="installPWA()">📱 Install</button>
       </div>
     </div>
+    <div class="card">
+      <div class="settings-section-title">🌡️ Garden Location & Frost Dates</div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Zip Code</h4><p>Used for local weather on the dashboard.</p></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-control" id="s-zipcode" style="width:100px;" value="${state.settings.zip_code || ''}" placeholder="e.g. 26301">
+          <button class="btn btn-secondary" onclick="saveSetting('zip_code', document.getElementById('s-zipcode').value)">Save</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Last Spring Frost</h4><p>Average date of last spring frost. Used for planting windows.</p></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-control" id="s-lastfrost" style="width:120px;" value="${state.settings.last_frost_date || ''}" placeholder="MM-DD e.g. 04-22">
+          <button class="btn btn-secondary" onclick="saveSetting('last_frost_date', document.getElementById('s-lastfrost').value)">Save</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>First Fall Frost</h4><p>Average date of first fall frost. Used for last planting date calculations.</p></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-control" id="s-firstfrost" style="width:120px;" value="${state.settings.first_frost_date || ''}" placeholder="MM-DD e.g. 10-15">
+          <button class="btn btn-secondary" onclick="saveSetting('first_frost_date', document.getElementById('s-firstfrost').value)">Save</button>
+        </div>
+      </div>
+    </div>
     ${isAdmin ? `
     <div class="card">
       <div class="settings-section-title">👥 User Management</div>
@@ -3027,6 +3164,13 @@ function renderSettings() {
       </div>
     </div>
   `;
+}
+
+async function saveSetting(key, value) {
+  await api('/api/settings', 'PUT', { key, value });
+  await loadAll();
+  render();
+  alert('✅ Setting saved!');
 }
 
 function showAddUser() {
