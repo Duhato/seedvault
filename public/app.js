@@ -3444,6 +3444,14 @@ function renderWeather() {
   `;
 }
 
+function toggleWeatherLog() {
+  state._showAllWeather = !state._showAllWeather;
+  const btn = document.getElementById('weather-log-toggle');
+  if (btn) btn.textContent = state._showAllWeather ? 'Show Less' : 'View All (' + state.weatherLog.length + ')';
+  const main = document.getElementById('main-content');
+  if (main) main.innerHTML = renderWeather();
+}
+
 function showWeatherDetail(id) {
   const w = state.weatherLog.find(x => x.id === id);
   if (!w) return;
@@ -3783,8 +3791,115 @@ function renderSettings() {
         <div class="settings-row-info"><h4>Variety Performance Report</h4><p>Compare germination rates, harvest counts and plant performance by variety.</p></div>
         <button class="btn btn-secondary" onclick="printVarietyReport()">🖨️ Print Report</button>
       </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Season Comparison Report</h4><p>Compare how each variety performed across multiple seasons — germination, harvest counts, seed saves.</p></div>
+        <button class="btn btn-secondary" onclick="printSeasonComparisonReport()">🖨️ Print Report</button>
+      </div>
     </div>
   `;
+}
+
+function printSeasonComparisonReport() {
+  const varieties = state.varieties;
+  const seedLots = state.seedLots;
+  const plants = state.plants;
+  const germTests = state.germination || [];
+  const harvest = state.harvestLog || [];
+
+  // Build per-variety per-year data
+  const data = {};
+  for (const v of varieties) {
+    const lots = seedLots.filter(l => l.variety_code === v.code);
+    const allPlants = plants.filter(p => lots.some(l => l.designation === p.seed_lot_designation));
+    if (allPlants.length === 0) continue;
+
+    const years = [...new Set(allPlants.map(p => p.season_year))].filter(Boolean).sort((a,b) => b - a);
+    data[v.code] = { variety: v, years: {} };
+
+    for (const year of years) {
+      const yPlants = allPlants.filter(p => p.season_year == year);
+      const yLots = lots.filter(l => l.year_saved == year);
+      const yHarvest = harvest.filter(h => yPlants.some(p => p.designation === h.plant_designation));
+      const yGerm = germTests.filter(g => lots.some(l => l.designation === g.seed_lot_designation && l.year_saved == year));
+      const seedSaved = yPlants.filter(p => p.selected_for_seed).length;
+      const avgGerm = yGerm.length > 0
+        ? Math.round(yGerm.reduce((s, g) => s + (g.seeds_germinated && g.seeds_planted ? (g.seeds_germinated / g.seeds_planted * 100) : 0), 0) / yGerm.length)
+        : null;
+      const totalFruit = yHarvest.reduce((s, h) => s + (parseInt(h.fruit_count || h.seed_count) || 0), 0);
+      const avgWeight = yHarvest.length > 0
+        ? (yHarvest.reduce((s, h) => s + parseFloat(h.fruit_weight_oz || 0), 0) / yHarvest.length).toFixed(1)
+        : null;
+
+      data[v.code].years[year] = {
+        plants: yPlants.length,
+        seedSaved,
+        germRate: avgGerm,
+        harvestEntries: yHarvest.length,
+        totalFruit,
+        avgWeightOz: avgWeight,
+        lots: yLots.length,
+      };
+    }
+  }
+
+  const allYears = [...new Set(Object.values(data).flatMap(d => Object.keys(d.years)))].sort((a,b) => b - a);
+
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html><html><head><title>SeedVault Season Comparison</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; color: #1a1a1a; }
+      h1 { color: #2d5a27; margin-bottom: 4px; }
+      h2 { color: #2d5a27; margin: 24px 0 8px; border-bottom: 2px solid #2d5a27; padding-bottom: 4px; font-size: 13pt; }
+      .subtitle { color: #666; font-size: 10pt; margin-bottom: 20px; }
+      table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 8px; }
+      th { background: #2d5a27; color: white; padding: 6px 8px; text-align: left; }
+      th.year { text-align: center; }
+      td { padding: 5px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+      td.year-cell { text-align: center; }
+      tr:nth-child(even) td { background: #f9f9f9; }
+      .good { color: #22c55e; font-weight: bold; }
+      .warning { color: #f59e0b; font-weight: bold; }
+      .none { color: #bbb; }
+      .seed-saved { color: #22c55e; }
+      .footer { margin-top: 20px; font-size: 8pt; color: #999; border-top: 1px solid #eee; padding-top: 8px; }
+      @media print { body { padding: 10px; } }
+    </style>
+    </head><body>
+    <h1>🌱 SeedVault — Season Comparison Report</h1>
+    <div class="subtitle">Generated ${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</div>
+
+    ${Object.values(data).map(({ variety, years }) => {
+      const yKeys = Object.keys(years).sort((a,b) => b - a);
+      if (yKeys.length === 0) return '';
+      return `
+        <h2>${variety.name} <span style="font-weight:normal;font-size:10pt;color:#666;">(${variety.code})</span></h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              ${yKeys.map(y => `<th class="year">${y}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Plants grown</td>${yKeys.map(y => `<td class="year-cell">${years[y].plants}</td>`).join('')}</tr>
+            <tr><td>Selected for seed save</td>${yKeys.map(y => `<td class="year-cell ${years[y].seedSaved > 0 ? 'seed-saved' : ''}">${years[y].seedSaved > 0 ? '✔ ' + years[y].seedSaved : '—'}</td>`).join('')}</tr>
+            <tr><td>Germination rate</td>${yKeys.map(y => `<td class="year-cell ${years[y].germRate !== null ? (years[y].germRate >= 75 ? 'good' : 'warning') : ''}">${years[y].germRate !== null ? years[y].germRate + '%' : '—'}</td>`).join('')}</tr>
+            <tr><td>Harvest log entries</td>${yKeys.map(y => `<td class="year-cell">${years[y].harvestEntries || '—'}</td>`).join('')}</tr>
+            <tr><td>Avg fruit weight (oz)</td>${yKeys.map(y => `<td class="year-cell">${years[y].avgWeightOz > 0 ? years[y].avgWeightOz + ' oz' : '—'}</td>`).join('')}</tr>
+            <tr><td>Seed lots saved</td>${yKeys.map(y => `<td class="year-cell">${years[y].lots || '—'}</td>`).join('')}</tr>
+          </tbody>
+        </table>
+      `;
+    }).join('')}
+
+    ${Object.keys(data).length === 0 ? '<p style="color:#999;">No multi-season data yet. Keep growing and this report will fill in automatically.</p>' : ''}
+    <div class="footer">SeedVault · Printed ${new Date().toLocaleString()}</div>
+    </body></html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 500);
 }
 
 function printInventoryReport() {
