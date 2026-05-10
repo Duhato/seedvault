@@ -702,7 +702,7 @@ app.delete('/api/seed-lots/:designation', authMiddleware, async (req, res) => {
 
 // PLANTS
 app.get('/api/plants', authMiddleware, async (req, res) => {
-  try { res.json((await pool.query('SELECT p.*, sl.variety_code, v.name as variety_name, gl.name as location_name FROM plants p LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code LEFT JOIN garden_locations gl ON p.location_id = gl.id ORDER BY p.season_year DESC, p.designation')).rows); }
+  try { res.json((await pool.query('SELECT p.*, sl.variety_code, v.name as variety_name, gl.name as location_name, tl.name as transplant_location_name FROM plants p LEFT JOIN seed_lots sl ON p.seed_lot_designation = sl.designation LEFT JOIN varieties v ON sl.variety_code = v.code LEFT JOIN garden_locations gl ON p.location_id = gl.id LEFT JOIN garden_locations tl ON p.transplant_location_id = tl.id ORDER BY p.season_year DESC, p.designation')).rows); }
   catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 app.post('/api/plants', authMiddleware, async (req, res) => {
@@ -716,9 +716,11 @@ app.post('/api/plants', authMiddleware, async (req, res) => {
   try {
     const existing = await pool.query('SELECT COUNT(*) FROM plants WHERE seed_lot_designation=$1 AND season_year=$2', [seed_lot_designation, season_year]);
     const startNum = parseInt(existing.rows[0].count) + 1;
+    const start_method = sanitizeString(req.body.start_method, 50) || 'direct_sow';
+    const started_indoors_date = sanitizeString(req.body.started_indoors_date, 20) || null;
     const created = [];
     for (let i = 0; i < count; i++) {
-      created.push((await pool.query('INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, location_id, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [seed_lot_designation + '-P' + String(startNum + i).padStart(2, '0'), seed_lot_designation, season_year, season_type, location_id || null, sanitizeString(req.body.notes, 2000)])).rows[0]);
+      created.push((await pool.query('INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, location_id, notes, start_method, started_indoors_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *', [seed_lot_designation + '-P' + String(startNum + i).padStart(2, '0'), seed_lot_designation, season_year, season_type, location_id || null, sanitizeString(req.body.notes, 2000), start_method, started_indoors_date])).rows[0]);
     }
     res.json(created);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
@@ -728,7 +730,8 @@ app.put('/api/plants/:designation', authMiddleware, async (req, res) => {
   const validSeasons = ['summer', 'winter', 'spring', 'fall'];
   const season_type = validSeasons.includes(req.body.season_type) ? req.body.season_type : 'summer';
   const location_id = validateInt(req.body.location_id, 1);
-  try { res.json((await pool.query('UPDATE plants SET selected_for_seed=$1, notes=$2, traits=$3, season_type=$4, location_id=$5 WHERE designation=$6 RETURNING *', [req.body.selected_for_seed === true || req.body.selected_for_seed === 'true', sanitizeString(req.body.notes, 2000), JSON.stringify(req.body.traits || {}), season_type, location_id || null, designation])).rows[0]); }
+  const transplant_location_id = validateInt(req.body.transplant_location_id, 1);
+  try { res.json((await pool.query('UPDATE plants SET selected_for_seed=$1, notes=$2, traits=$3, season_type=$4, location_id=$5, start_method=$6, started_indoors_date=$7, transplant_date=$8, transplant_location_id=$9, transplant_notes=$10 WHERE designation=$11 RETURNING *', [req.body.selected_for_seed === true || req.body.selected_for_seed === 'true', sanitizeString(req.body.notes, 2000), JSON.stringify(req.body.traits || {}), season_type, location_id || null, sanitizeString(req.body.start_method, 50) || 'direct_sow', sanitizeString(req.body.started_indoors_date, 20) || null, sanitizeString(req.body.transplant_date, 20) || null, transplant_location_id || null, sanitizeString(req.body.transplant_notes, 2000), designation])).rows[0]); }
   catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 app.delete('/api/plants/:designation', authMiddleware, async (req, res) => {

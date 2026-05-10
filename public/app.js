@@ -1797,6 +1797,34 @@ function showPlantDetail(designation) {
         `).join('')}
       </div>` : ''}
 
+      ${p.started_indoors_date || p.transplant_date ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌱 Growth Timeline</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${p.start_method && p.start_method !== 'direct_sow' && p.started_indoors_date ? `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--green-bg);border-radius:6px;">
+            <span style="font-size:1.2rem;">🏠</span>
+            <div>
+              <div style="font-weight:600;font-size:0.85rem;">Started Indoors</div>
+              <div style="font-size:0.8rem;color:var(--text-muted);">${new Date(p.started_indoors_date).toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</div>
+            </div>
+          </div>` : ''}
+          ${p.transplant_date ? `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--green-bg);border-radius:6px;">
+            <span style="font-size:1.2rem;">🪴</span>
+            <div>
+              <div style="font-weight:600;font-size:0.85rem;">Transplanted${p.transplant_location_name ? ' to ' + p.transplant_location_name : ''}</div>
+              <div style="font-size:0.8rem;color:var(--text-muted);">${new Date(p.transplant_date).toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</div>
+              ${p.transplant_notes ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">${p.transplant_notes}</div>` : ''}
+            </div>
+          </div>` : ''}
+          ${p.started_indoors_date && p.transplant_date ? `
+          <div style="font-size:0.8rem;color:var(--text-muted);padding-left:12px;">
+            ⏱️ ${Math.round((new Date(p.transplant_date) - new Date(p.started_indoors_date)) / (1000*60*60*24))} days from start to transplant
+          </div>` : ''}
+        </div>
+      </div>` : ''}
+
       ${plantCrosses.length > 0 ? `
       <div>
         <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌸 Cross Pollinations (${plantCrosses.length})</div>
@@ -1859,13 +1887,14 @@ function renderPlants() {
     <div class="card">
       ${thisYear.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🪴</div><p>${allThisYear.length === 0 ? 'No plants logged this season yet.' : 'No plants match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
-        <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Photo</th><th>Season</th><th>Seed Save</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Photo</th><th>Start</th><th>Transplanted</th><th>Seed Save</th><th>Actions</th></tr></thead>
         <tbody>${thisYear.map(p => `<tr style="cursor:pointer;" onclick="showPlantDetail('${p.designation}')">
           <td><span class="designation">${p.designation}</span></td>
           <td>${p.variety_name || '—'}</td>
           <td>${p.location_name ? '<span style="font-size:0.85rem;">📍 ' + p.location_name + '</span>' : '—'}</td>
           <td onclick="event.stopPropagation()">${p.photo_path ? `<img src="${p.photo_path}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="showPlantPhoto('${p.designation}')">` : '<span style="color:var(--text-muted);font-size:0.8rem;">—</span>'}</td>
-          <td>${p.season_type}</td>
+          <td>${p.start_method === 'indoor_start' ? '🏠 Indoor' : p.start_method === 'transplant' ? '🌿 Transplant' : '🌱 Direct'}</td>
+          <td>${p.transplant_date ? '🪴 ' + new Date(p.transplant_date).toLocaleDateString() : p.started_indoors_date ? '🏠 Started' : '—'}</td>
           <td>${p.selected_for_seed ? '<span class="seed-star">⭐ Selected</span>' : '—'}</td>
           <td onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;">
             <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
@@ -1967,12 +1996,29 @@ function showAddPlants(preselectedLot = '') {
         ${state.locations.filter(l => l.active).map(l => `<option value="${l.id}">${l.name} (${l.type})</option>`).join('')}
       </select>
     </div>
+    <div class="form-group"><label class="form-label">Start Method</label>
+      <select class="form-control" id="f-startmethod" onchange="toggleIndoorDate()">
+        <option value="direct_sow">Direct Sow</option>
+        <option value="indoor_start">Started Indoors</option>
+        <option value="transplant">Transplant from Nursery</option>
+      </select>
+    </div>
+    <div class="form-group hidden" id="f-indoordate-group">
+      <label class="form-label">Date Started Indoors</label>
+      <input class="form-control" id="f-indoordate" type="date">
+    </div>
     <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2"></textarea></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitPlants()">Add Plants</button>
     </div>
   `);
+}
+
+function toggleIndoorDate() {
+  const method = document.getElementById('f-startmethod')?.value;
+  const group = document.getElementById('f-indoordate-group');
+  if (group) group.classList.toggle('hidden', method === 'direct_sow');
 }
 
 function showEditPlant(designation) {
@@ -1998,7 +2044,34 @@ function showEditPlant(designation) {
         <option value="true" ${p.selected_for_seed ? 'selected' : ''}>Yes ⭐</option>
       </select>
     </div>
-    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3">${p.notes || ''}</textarea></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="2">${p.notes || ''}</textarea></div>
+    <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">🌱 Growth Timeline</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Start Method</label>
+        <select class="form-control" id="f-startmethod">
+          <option value="direct_sow" ${p.start_method === 'direct_sow' || !p.start_method ? 'selected' : ''}>Direct Sow</option>
+          <option value="indoor_start" ${p.start_method === 'indoor_start' ? 'selected' : ''}>Started Indoors</option>
+          <option value="transplant" ${p.start_method === 'transplant' ? 'selected' : ''}>Transplant from Nursery</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Date Started Indoors</label>
+        <input class="form-control" id="f-indoordate" type="date" value="${p.started_indoors_date ? p.started_indoors_date.split('T')[0] : ''}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Transplant Date</label>
+        <input class="form-control" id="f-transplantdate" type="date" value="${p.transplant_date ? p.transplant_date.split('T')[0] : ''}">
+      </div>
+      <div class="form-group"><label class="form-label">Transplanted To</label>
+        <select class="form-control" id="f-transplantloc">
+          <option value="">Select location...</option>
+          ${state.locations.filter(l => l.active).map(l => `<option value="${l.id}" ${p.transplant_location_id === l.id ? 'selected' : ''}>${l.name}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Transplant Notes</label>
+      <textarea class="form-control" id="f-transplantnotes" rows="2" placeholder="Condition when transplanted, weather, observations...">${p.transplant_notes || ''}</textarea>
+    </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitEditPlant('${designation}')">Save Changes</button>
@@ -2010,7 +2083,9 @@ async function submitPlants() {
   const seed_lot_designation = document.getElementById('f-lot').value;
   if (!seed_lot_designation) return alert('Select a seed lot');
   const location_id = document.getElementById('f-location').value;
-  const result = await api('/api/plants', 'POST', { seed_lot_designation, season_year: new Date().getFullYear(), season_type: document.getElementById('f-season').value, count: parseInt(document.getElementById('f-count').value), location_id: location_id || null, notes: document.getElementById('f-notes').value });
+  const startMethod = document.getElementById('f-startmethod')?.value || 'direct_sow';
+  const indoorDate = document.getElementById('f-indoordate')?.value || null;
+  const result = await api('/api/plants', 'POST', { seed_lot_designation, season_year: new Date().getFullYear(), season_type: document.getElementById('f-season').value, count: parseInt(document.getElementById('f-count').value), location_id: location_id || null, notes: document.getElementById('f-notes').value, start_method: startMethod, started_indoors_date: indoorDate });
   closeModal(); await loadAll(); render();
   setTimeout(() => alert('✅ ' + result.length + ' plant(s) added!\nFirst: ' + result[0].designation), 100);
 }
@@ -2018,7 +2093,8 @@ async function submitPlants() {
 async function submitEditPlant(designation) {
   const plant = state.plants.find(p => p.designation === designation);
   const location_id = document.getElementById('f-location').value;
-  await api('/api/plants/' + designation, 'PUT', { selected_for_seed: document.getElementById('f-seedsave').value === 'true', notes: document.getElementById('f-notes').value, season_type: document.getElementById('f-season').value, location_id: location_id || null, traits: plant.traits || {} });
+  const transplantLocId = document.getElementById('f-transplantloc')?.value || null;
+  await api('/api/plants/' + designation, 'PUT', { selected_for_seed: document.getElementById('f-seedsave').value === 'true', notes: document.getElementById('f-notes').value, season_type: document.getElementById('f-season').value, location_id: location_id || null, traits: plant.traits || {}, start_method: document.getElementById('f-startmethod')?.value || 'direct_sow', started_indoors_date: document.getElementById('f-indoordate')?.value || null, transplant_date: document.getElementById('f-transplantdate')?.value || null, transplant_location_id: transplantLocId || null, transplant_notes: document.getElementById('f-transplantnotes')?.value || null });
   closeModal(); await loadAll(); render();
 }
 
