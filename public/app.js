@@ -1091,7 +1091,7 @@ function renderSeedLots() {
     <div class="card">
       ${filteredLots.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>${state.seedLots.length === 0 ? 'No seed lots yet.' : 'No lots match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
-        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Quantity</th><th>Storage</th><th>Germination</th><th>Viability</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Quantity</th><th>Storage</th><th>Germination</th><th>Notes</th><th>Viability</th><th>Actions</th></tr></thead>
         <tbody>${filteredLots.map(lot => {
           const maxYears = viabilityYears[lot.species_code] || 3;
           const yearsLeft = maxYears - (currentYear - lot.year_saved);
@@ -1110,6 +1110,7 @@ function renderSeedLots() {
             <td>${qtyDisplay}</td>
             <td>${lot.storage_location || '—'}</td>
             <td>${lot.germination_rate ? lot.germination_rate + '%' : '—'}</td>
+            <td style="max-width:150px;font-size:0.8rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${lot.notes ? lot.notes.substring(0, 40) + (lot.notes.length > 40 ? '...' : '') : '—'}</td>
             <td>${viabilityBadge}</td>
             <td onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;">
               <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
