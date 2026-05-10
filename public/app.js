@@ -368,6 +368,17 @@ function renderDashboard() {
         <button class="btn btn-secondary btn-sm" onclick="printSeasonSummary()">🖨️ Season Summary</button>
       </div>
     </div>
+    <div class="card" style="padding:12px 16px;">
+      <div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);margin-bottom:10px;">⚡ Quick Actions</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="showAddHarvest()">📋 Log Harvest</button>
+        <button class="btn btn-primary btn-sm" onclick="showAddAmendment()">🌿 Log Amendment</button>
+        <button class="btn btn-primary btn-sm" onclick="showAddObservation()">🔍 Log Observation</button>
+        <button class="btn btn-primary btn-sm" onclick="showAddGermination()">🌱 Start Germ Test</button>
+        <button class="btn btn-secondary btn-sm" onclick="showAddPlants()">🪴 Add Plants</button>
+        <button class="btn btn-secondary btn-sm" onclick="showAddSeedLot()">🫙 Add Seed Lot</button>
+      </div>
+    </div>
     <div class="stats-grid">
       <div class="stat-card clickable" onclick="navigate('varieties')"><div class="stat-number">${s.varieties || 0}</div><div class="stat-label">Varieties</div></div>
       <div class="stat-card clickable" onclick="navigate('seedlots')"><div class="stat-number">${s.seedLots || 0}</div><div class="stat-label">Seed Lots</div></div>
