@@ -485,13 +485,34 @@ function showSeedLotDetail(designation) {
 }
 
 function renderVarieties() {
+  const searchTerm = (document.getElementById('variety-search')?.value || '').toLowerCase();
+  const filterSpecies = document.getElementById('variety-filter-species')?.value || '';
+  let filteredVarieties = state.varieties.filter(v => {
+    const matchSearch = !searchTerm ||
+      v.name.toLowerCase().includes(searchTerm) ||
+      v.code.toLowerCase().includes(searchTerm) ||
+      (v.source || '').toLowerCase().includes(searchTerm);
+    const matchSpecies = !filterSpecies || v.species_code === filterSpecies;
+    return matchSearch && matchSpecies;
+  });
   return `
     <div class="page-header"><h1 class="page-title">🌿 Varieties</h1><button class="btn btn-primary" onclick="showAddVariety()">+ Add Variety</button></div>
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="variety-search" placeholder="🔍 Search varieties..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="variety-filter-species" style="max-width:150px;" onchange="render()">
+          <option value="">All Species</option>
+          ${state.species.map(s => `<option value="${s.code}" ${filterSpecies === s.code ? 'selected' : ''}>${s.name}</option>`).join('')}
+        </select>
+        ${searchTerm || filterSpecies ? `<button class="btn btn-secondary btn-sm" onclick="clearVarietyFilters()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredVarieties.length} of ${state.varieties.length} varieties</span>
+      </div>
+    </div>
     <div class="card">
-      ${state.varieties.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>No varieties yet.</p></div>`
+      ${filteredVarieties.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>${state.varieties.length === 0 ? 'No varieties yet.' : 'No varieties match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
         <thead><tr><th>Code</th><th>Name</th><th>Species</th><th>Type</th><th>Source</th><th>Year</th><th>Lots</th><th>Actions</th></tr></thead>
-        <tbody>${state.varieties.map(v => {
+        <tbody>${filteredVarieties.map(v => {
           const lots = state.seedLots.filter(l => l.variety_code === v.code).length;
           return `<tr style="cursor:pointer;" onclick="showVarietyDetail('${v.code}')">
             <td><span class="designation">${v.code}</span></td>
@@ -509,6 +530,24 @@ function renderVarieties() {
       </table></div>`}
     </div>
   `;
+}
+
+function clearSeedLotFilters() {
+  const s = document.getElementById('seedlot-search');
+  const fs = document.getElementById('seedlot-filter-species');
+  const fg = document.getElementById('seedlot-filter-gen');
+  if (s) s.value = '';
+  if (fs) fs.value = '';
+  if (fg) fg.value = '';
+  render();
+}
+
+function clearVarietyFilters() {
+  const s = document.getElementById('variety-search');
+  const fs = document.getElementById('variety-filter-species');
+  if (s) s.value = '';
+  if (fs) fs.value = '';
+  render();
 }
 
 function showVarietyDetail(code) {
@@ -606,10 +645,10 @@ function renderSeedLots() {
   return `
     <div class="page-header"><h1 class="page-title">🫙 Seed Lots</h1><button class="btn btn-primary" onclick="showAddSeedLot()">+ Add Seed Lot</button></div>
     <div class="card">
-      ${state.seedLots.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>No seed lots yet.</p></div>`
+      ${filteredLots.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>${state.seedLots.length === 0 ? 'No seed lots yet.' : 'No lots match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
         <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Quantity</th><th>Storage</th><th>Germination</th><th>Viability</th><th>Actions</th></tr></thead>
-        <tbody>${state.seedLots.map(lot => {
+        <tbody>${filteredLots.map(lot => {
           const maxYears = viabilityYears[lot.species_code] || 3;
           const yearsLeft = maxYears - (currentYear - lot.year_saved);
           let viabilityBadge = '<span style="color:#22c55e;font-weight:600;">🟢 Good</span>';
