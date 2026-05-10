@@ -762,6 +762,16 @@ function renderVarieties() {
   `;
 }
 
+function clearPlantFilters() {
+  const s = document.getElementById('plant-search');
+  const fs = document.getElementById('plant-filter-seedsave');
+  const fl = document.getElementById('plant-filter-location');
+  if (s) s.value = '';
+  if (fs) fs.value = '';
+  if (fl) fl.value = '';
+  render();
+}
+
 function clearSeedLotFilters() {
   const s = document.getElementById('seedlot-search');
   const fs = document.getElementById('seedlot-filter-species');
@@ -1530,11 +1540,40 @@ async function deleteSeedLot(designation) {
 
 function renderPlants() {
   const year = new Date().getFullYear();
-  const thisYear = state.plants.filter(p => p.season_year === year);
+  const searchTerm = (document.getElementById('plant-search')?.value || '').toLowerCase();
+  const filterSeedSave = document.getElementById('plant-filter-seedsave')?.value || '';
+  const filterLocation = document.getElementById('plant-filter-location')?.value || '';
+  let thisYear = state.plants.filter(p => {
+    if (p.season_year !== year) return false;
+    const matchSearch = !searchTerm ||
+      p.designation.toLowerCase().includes(searchTerm) ||
+      (p.variety_name || '').toLowerCase().includes(searchTerm) ||
+      (p.location_name || '').toLowerCase().includes(searchTerm);
+    const matchSeedSave = !filterSeedSave || (filterSeedSave === 'yes' ? p.selected_for_seed : !p.selected_for_seed);
+    const matchLocation = !filterLocation || String(p.location_id) === filterLocation;
+    return matchSearch && matchSeedSave && matchLocation;
+  });
+  const allThisYear = state.plants.filter(p => p.season_year === year);
   return `
     <div class="page-header"><h1 class="page-title">🪴 Plants — ${year}</h1><button class="btn btn-primary" onclick="showAddPlants()">+ Add Plants</button></div>
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="plant-search" placeholder="🔍 Search plants..." style="max-width:200px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="plant-filter-seedsave" style="max-width:150px;" onchange="render()">
+          <option value="">All Plants</option>
+          <option value="yes" ${filterSeedSave === 'yes' ? 'selected' : ''}>⭐ Seed Save Selected</option>
+          <option value="no" ${filterSeedSave === 'no' ? 'selected' : ''}>Not Selected</option>
+        </select>
+        <select class="form-control" id="plant-filter-location" style="max-width:150px;" onchange="render()">
+          <option value="">All Locations</option>
+          ${state.locations.filter(l => l.active).map(l => `<option value="${l.id}" ${filterLocation === String(l.id) ? 'selected' : ''}>${l.name}</option>`).join('')}
+        </select>
+        ${searchTerm || filterSeedSave || filterLocation ? `<button class="btn btn-secondary btn-sm" onclick="clearPlantFilters()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${thisYear.length} of ${allThisYear.length} plants</span>
+      </div>
+    </div>
     <div class="card">
-      ${thisYear.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🪴</div><p>No plants logged this season yet.</p></div>`
+      ${thisYear.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🪴</div><p>${allThisYear.length === 0 ? 'No plants logged this season yet.' : 'No plants match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
         <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Photo</th><th>Season</th><th>Seed Save</th><th>Actions</th></tr></thead>
         <tbody>${thisYear.map(p => `<tr>
@@ -1878,13 +1917,28 @@ function printQR(designation) {
 }
 
 function renderHarvest() {
+  const searchTerm = (document.getElementById('harvest-search')?.value || '').toLowerCase();
+  let filteredHarvest = state.harvest.filter(h => {
+    return !searchTerm ||
+      h.plant_designation.toLowerCase().includes(searchTerm) ||
+      (h.variety_name || '').toLowerCase().includes(searchTerm) ||
+      (h.processing_method || '').toLowerCase().includes(searchTerm) ||
+      (h.condition || '').toLowerCase().includes(searchTerm);
+  });
   return `
     <div class="page-header"><h1 class="page-title">📋 Harvest Log</h1><button class="btn btn-primary" onclick="showAddHarvest()">+ Log Harvest</button></div>
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="harvest-search" placeholder="🔍 Search harvest..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        ${searchTerm ? `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('harvest-search').value='';render()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredHarvest.length} of ${state.harvest.length} records</span>
+      </div>
+    </div>
     <div class="card">
-      ${state.harvest.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">📋</div><p>No harvest records yet.</p></div>`
+      ${filteredHarvest.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">📋</div><p>${state.harvest.length === 0 ? 'No harvest records yet.' : 'No records match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
         <thead><tr><th>Date</th><th>Plant</th><th>Variety</th><th>Length</th><th>Diameter</th><th>Weight</th><th>Seeds</th><th>Method</th><th>Actions</th></tr></thead>
-        <tbody>${state.harvest.map(h => `<tr>
+        <tbody>${filteredHarvest.map(h => `<tr>
           <td>${h.harvest_date ? new Date(h.harvest_date).toLocaleDateString() : '—'}</td>
           <td><span class="designation" style="font-size:0.75rem;">${h.plant_designation}</span></td>
           <td>${h.variety_name || '—'}</td>
@@ -2318,10 +2372,25 @@ async function deleteCross(id) {
 }
 
 function renderObservations() {
+  const searchTerm = (document.getElementById('obs-search')?.value || '').toLowerCase();
+  let filteredObs = state.observations.filter(o => {
+    return !searchTerm ||
+      o.plant_designation.toLowerCase().includes(searchTerm) ||
+      (o.variety_name || '').toLowerCase().includes(searchTerm) ||
+      (o.color || '').toLowerCase().includes(searchTerm) ||
+      (o.notes || '').toLowerCase().includes(searchTerm);
+  });
   return `
     <div class="page-header"><h1 class="page-title">🔍 Fruit Observations</h1><button class="btn btn-primary" onclick="showAddObservation()">+ Add Observation</button></div>
-    ${state.observations.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>No fruit observations yet.</p></div></div>`
-    : state.observations.map(o => `
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="obs-search" placeholder="🔍 Search observations..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        ${searchTerm ? `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('obs-search').value='';render()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredObs.length} of ${state.observations.length} observations</span>
+      </div>
+    </div>
+    ${filteredObs.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>${state.observations.length === 0 ? 'No fruit observations yet.' : 'No observations match your search.'}</p></div></div>`
+    : filteredObs.map(o => `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
           <div>
