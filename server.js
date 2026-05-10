@@ -9,6 +9,8 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const multer = require('multer');
+const archiver = require('archiver');
+const unzipper = require('unzipper');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -924,6 +926,103 @@ app.get('/api/viability', authMiddleware, async (req, res) => {
 });
 
 // BACKUP
+app.get('/api/backup/export-zip', authMiddleware, async (req, res) => {
+  try {
+    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources] = await Promise.all([
+      pool.query('SELECT * FROM species ORDER BY code'),
+      pool.query('SELECT * FROM varieties ORDER BY code'),
+      pool.query('SELECT * FROM seed_lots ORDER BY designation'),
+      pool.query('SELECT * FROM plants ORDER BY designation'),
+      pool.query('SELECT * FROM breeding_projects ORDER BY code'),
+      pool.query('SELECT * FROM harvest_log ORDER BY harvest_date'),
+      pool.query('SELECT * FROM germination_tests ORDER BY date_started'),
+      pool.query('SELECT * FROM plant_amendments ORDER BY amendment_date'),
+      pool.query('SELECT * FROM cross_pollinations ORDER BY created_at'),
+      pool.query('SELECT * FROM fruit_observations ORDER BY observation_date'),
+      pool.query('SELECT * FROM garden_locations ORDER BY name'),
+      pool.query('SELECT * FROM seed_sources ORDER BY name'),
+    ]);
+
+    const filename = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.zip';
+    res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
+    res.setHeader('Content-Type', 'application/zip');
+
+    const archive = archiver('zip', { zlib: { level: 6 } });
+    archive.pipe(res);
+
+    const data = {
+      app: 'SeedVault', version: '1.1.0', exported_at: new Date().toISOString(),
+      data: { species: species.rows, varieties: varieties.rows, seed_lots: seedLots.rows,
+        plants: plants.rows, breeding_projects: projects.rows, harvest_log: harvest.rows,
+        germination_tests: germination.rows, plant_amendments: amendments.rows,
+        cross_pollinations: crosses.rows, fruit_observations: observations.rows,
+        garden_locations: locations.rows, seed_sources: sources.rows }
+    };
+    archive.append(JSON.stringify(data, null, 2), { name: 'seedvault-backup.json' });
+
+    // Add photos if they exist
+    const uploadsDir = '/app/uploads';
+    if (fs.existsSync(uploadsDir)) {
+      archive.directory(uploadsDir, 'uploads');
+    }
+
+    await archive.finalize();
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/backup/import-zip', authMiddleware, async (req, res) => {
+  const uploadZip = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
+  uploadZip.single('backup')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const client = await pool.connect();
+    try {
+      const zip = await unzipper.Open.buffer(req.file.buffer);
+      let backupData = null;
+
+      // Extract and restore photos
+      for (const file of zip.files) {
+        if (file.path === 'seedvault-backup.json') {
+          const content = await file.buffer();
+          backupData = JSON.parse(content.toString());
+        } else if (file.path.startsWith('uploads/')) {
+          const destPath = '/app/' + file.path;
+          const destDir = destPath.substring(0, destPath.lastIndexOf('/'));
+          if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+          if (!file.path.endsWith('/')) {
+            const buffer = await file.buffer();
+            fs.writeFileSync(destPath, buffer);
+          }
+        }
+      }
+
+      if (!backupData || backupData.app !== 'SeedVault') {
+        return res.status(400).json({ error: 'Invalid SeedVault backup file' });
+      }
+
+      const { data } = backupData;
+      let imported = { species: 0, varieties: 0, seed_lots: 0, plants: 0, breeding_projects: 0, harvest_log: 0, germination_tests: 0, plant_amendments: 0, cross_pollinations: 0, fruit_observations: 0, garden_locations: 0, seed_sources: 0 };
+      let skipped = { ...imported };
+
+      await client.query('BEGIN');
+      for (const s of (data.species || [])) { const r = await client.query('INSERT INTO species (code, name) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING RETURNING *', [s.code, s.name]); r.rowCount > 0 ? imported.species++ : skipped.species++; }
+      for (const v of (data.varieties || [])) { const r = await client.query('INSERT INTO varieties (code, name, species_code, type, description, source, year_acquired) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (code) DO NOTHING RETURNING *', [v.code, v.name, v.species_code, v.type, v.description, v.source, v.year_acquired]); r.rowCount > 0 ? imported.varieties++ : skipped.varieties++; }
+      for (const sl of (data.seed_lots || [])) { const r = await client.query('INSERT INTO seed_lots (designation, variety_code, generation, year_saved, quantity_estimate, mother_designation, father_designation, notes, storage_location, germination_rate, last_tested, packet_front_path, packet_back_path) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT (designation) DO NOTHING RETURNING *', [sl.designation, sl.variety_code, sl.generation, sl.year_saved, sl.quantity_estimate, sl.mother_designation, sl.father_designation, sl.notes, sl.storage_location, sl.germination_rate, sl.last_tested, sl.packet_front_path, sl.packet_back_path]); r.rowCount > 0 ? imported.seed_lots++ : skipped.seed_lots++; }
+      for (const loc of (data.garden_locations || [])) { const r = await client.query('INSERT INTO garden_locations (name, type, size_description, soil_notes, sun_exposure, notes, active) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [loc.name, loc.type, loc.size_description, loc.soil_notes, loc.sun_exposure, loc.notes, loc.active]); r.rowCount > 0 ? imported.garden_locations++ : skipped.garden_locations++; }
+      for (const p of (data.plants || [])) { const r = await client.query('INSERT INTO plants (designation, seed_lot_designation, season_year, season_type, selected_for_seed, notes, traits, photo_path) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (designation) DO NOTHING RETURNING *', [p.designation, p.seed_lot_designation, p.season_year, p.season_type, p.selected_for_seed, p.notes, p.traits, p.photo_path]); r.rowCount > 0 ? imported.plants++ : skipped.plants++; }
+      for (const bp of (data.breeding_projects || [])) { const r = await client.query('INSERT INTO breeding_projects (code, name, description, target_traits, status, started_year) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO NOTHING RETURNING *', [bp.code, bp.name, bp.description, bp.target_traits, bp.status, bp.started_year]); r.rowCount > 0 ? imported.breeding_projects++ : skipped.breeding_projects++; }
+      for (const h of (data.harvest_log || [])) { const r = await client.query('INSERT INTO harvest_log (plant_designation, harvest_date, fruit_length_inches, fruit_diameter_inches, fruit_weight_oz, condition, processing_method, seed_count, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', [h.plant_designation, h.harvest_date, h.fruit_length_inches, h.fruit_diameter_inches, h.fruit_weight_oz, h.condition, h.processing_method, h.seed_count, h.notes]); r.rowCount > 0 ? imported.harvest_log++ : skipped.harvest_log++; }
+      for (const g of (data.germination_tests || [])) { const r = await client.query('INSERT INTO germination_tests (seed_lot_designation, date_started, seeds_planted, seeds_germinated, date_germinated, days_to_germination, seeds_thinned, date_thinned, plants_remaining, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *', [g.seed_lot_designation, g.date_started, g.seeds_planted, g.seeds_germinated, g.date_germinated, g.days_to_germination, g.seeds_thinned, g.date_thinned, g.plants_remaining, g.notes]); r.rowCount > 0 ? imported.germination_tests++ : skipped.germination_tests++; }
+      for (const a of (data.plant_amendments || [])) { const r = await client.query('INSERT INTO plant_amendments (plant_designation, amendment_date, type, product_name, amount, method, notes) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [a.plant_designation, a.amendment_date, a.type, a.product_name, a.amount, a.method, a.notes]); r.rowCount > 0 ? imported.plant_amendments++ : skipped.plant_amendments++; }
+      for (const c of (data.cross_pollinations || [])) { const r = await client.query('INSERT INTO cross_pollinations (mother_designation, father_designation, project_code, date_bagged, date_pollinated, date_unbagged, success, fruit_set, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', [c.mother_designation, c.father_designation, c.project_code, c.date_bagged, c.date_pollinated, c.date_unbagged, c.success, c.fruit_set, c.notes]); r.rowCount > 0 ? imported.cross_pollinations++ : skipped.cross_pollinations++; }
+      for (const o of (data.fruit_observations || [])) { const r = await client.query('INSERT INTO fruit_observations (plant_designation, observation_date, fruit_count, avg_length_inches, avg_diameter_inches, color, texture, flavor_notes, health_notes, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *', [o.plant_designation, o.observation_date, o.fruit_count, o.avg_length_inches, o.avg_diameter_inches, o.color, o.texture, o.flavor_notes, o.health_notes, o.notes]); r.rowCount > 0 ? imported.fruit_observations++ : skipped.fruit_observations++; }
+      await client.query('COMMIT');
+      res.json({ success: true, imported, skipped });
+    } catch (err) { await client.query('ROLLBACK'); console.error(err); res.status(500).json({ error: 'Server error: ' + err.message }); }
+    finally { client.release(); }
+  });
+});
+
 app.get('/api/backup/export', authMiddleware, async (req, res) => {
   try {
     const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources] = await Promise.all([

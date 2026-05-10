@@ -3085,16 +3085,24 @@ function renderSettings() {
     <div class="card">
       <div class="settings-section-title">💾 Backup & Restore</div>
       <div class="settings-row">
-        <div class="settings-row-info"><h4>Export JSON Backup</h4><p>Download a full backup of all your data.</p></div>
-        <button class="btn btn-primary" onclick="exportBackup()">⬇️ Export JSON</button>
+        <div class="settings-row-info"><h4>Export ZIP Backup</h4><p>Download a full backup including all photos. Recommended.</p></div>
+        <button class="btn btn-primary" onclick="exportZipBackup()">⬇️ Export ZIP</button>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Import ZIP Backup</h4><p>Restore from a ZIP backup including photos.</p></div>
+        <button class="btn btn-secondary" onclick="triggerZipImport()">⬆️ Import ZIP</button>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Export JSON Backup</h4><p>Download data only backup without photos.</p></div>
+        <button class="btn btn-secondary" onclick="exportBackup()">⬇️ Export JSON</button>
       </div>
       <div class="settings-row">
         <div class="settings-row-info"><h4>Export CSV</h4><p>Download all data as a CSV file.</p></div>
         <button class="btn btn-secondary" onclick="exportCSV()">⬇️ Export CSV</button>
       </div>
       <div class="settings-row">
-        <div class="settings-row-info"><h4>Import Backup</h4><p>Restore from a previously exported JSON backup.</p></div>
-        <button class="btn btn-secondary" onclick="triggerImport()">⬆️ Import Backup</button>
+        <div class="settings-row-info"><h4>Import JSON Backup</h4><p>Restore from a previously exported JSON backup.</p></div>
+        <button class="btn btn-secondary" onclick="triggerImport()">⬆️ Import JSON</button>
       </div>
     </div>
     <div class="card">
@@ -3386,6 +3394,54 @@ async function deleteSource(id) {
   await api('/api/sources/' + id, 'DELETE'); await loadAll(); render();
 }
 
+async function exportZipBackup() {
+  try {
+    const res = await fetch('/api/backup/export-zip', { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (!res.ok) { alert('Export failed'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.zip'; a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) { alert('Export failed: ' + err.message); }
+}
+
+function triggerZipImport() { document.getElementById('import-zip-input').click(); }
+
+async function handleZipImportFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!file.name.endsWith('.zip')) { alert('Please select a .zip backup file'); return; }
+  openModal('Import ZIP Backup', `
+    <div class="alert alert-warn">⚠️ This will import all data and photos from the backup. Existing records will be skipped.</div>
+    <div style="background:var(--green-bg);padding:12px;border-radius:8px;margin-bottom:16px;">
+      <div style="font-size:0.9rem;">File: <strong>${file.name}</strong></div>
+      <div style="font-size:0.85rem;color:var(--text-muted);">Size: ${(file.size / 1024 / 1024).toFixed(1)} MB</div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="confirm-zip-import-btn">✅ Import</button>
+    </div>
+  `);
+  document.getElementById('confirm-zip-import-btn').onclick = async () => {
+    closeModal();
+    const formData = new FormData();
+    formData.append('backup', file);
+    try {
+      const res = await fetch('/api/backup/import-zip', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + getToken() },
+        body: formData
+      });
+      const result = await res.json();
+      if (result.error) { alert('Import failed: ' + result.error); return; }
+      await loadAll(); render();
+      setTimeout(() => alert('✅ ZIP Import complete!\n\nImported:\n  Varieties: ' + result.imported.varieties + '\n  Seed Lots: ' + result.imported.seed_lots + '\n  Plants: ' + result.imported.plants + '\n  Photos restored from ZIP'), 100);
+    } catch (err) { alert('Import failed: ' + err.message); }
+  };
+  e.target.value = '';
+}
+
 async function exportBackup() {
   try {
     const res = await fetch('/api/backup/export', { headers: { 'Authorization': 'Bearer ' + getToken() } });
@@ -3509,6 +3565,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('modal-close').addEventListener('click', closeModal);
   document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target === document.getElementById('modal-overlay')) closeModal(); });
   document.getElementById('import-file-input').addEventListener('change', handleImportFile);
+  document.getElementById('import-zip-input').addEventListener('change', handleZipImportFile);
   document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
   document.getElementById('login-username').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
 
