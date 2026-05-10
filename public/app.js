@@ -3466,6 +3466,40 @@ function installPWA() {
   }
 }
 
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (document.getElementById('modal-overlay') && !document.getElementById('modal-overlay').classList.contains('hidden')) {
+    if (e.key === 'Escape') closeModal();
+    return;
+  }
+  switch(e.key) {
+    case '1': navigate('dashboard'); break;
+    case '2': navigate('varieties'); break;
+    case '3': navigate('seedlots'); break;
+    case '4': navigate('plants'); break;
+    case '5': navigate('germination'); break;
+    case '6': navigate('harvest'); break;
+    case '7': navigate('projects'); break;
+    case '8': navigate('crosses'); break;
+    case '9': navigate('observations'); break;
+    case '0': navigate('amendments'); break;
+    case 'n': case 'N':
+      if (state.page === 'seedlots') showAddSeedLot();
+      else if (state.page === 'plants') showAddPlants();
+      else if (state.page === 'varieties') showAddVariety();
+      else if (state.page === 'harvest') showAddHarvest();
+      else if (state.page === 'germination') showAddGermination();
+      else if (state.page === 'crosses') showAddCross();
+      else if (state.page === 'observations') showAddObservation();
+      else if (state.page === 'amendments') showAddAmendment();
+      break;
+    case 's': case 'S':
+      const searchEl = document.querySelector('[id$="-search"]');
+      if (searchEl) { searchEl.focus(); e.preventDefault(); }
+      break;
+  }
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
   setTheme(getTheme());
   document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.page)));
