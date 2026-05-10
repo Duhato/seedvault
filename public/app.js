@@ -254,7 +254,7 @@ async function loadWeather() {
     const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${zip}&count=1&language=en&format=json`).then(r => r.json());
     if (!geo.results || geo.results.length === 0) { weatherEl.textContent = 'Location not found'; return; }
     const { latitude, longitude, name, admin1 } = geo.results[0];
-    const weather = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,precipitation,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`).then(r => r.json());
+    const weather = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto`).then(r => r.json());
     const c = weather.current;
     const codes = {0:'☀️ Clear',1:'🌤️ Mainly Clear',2:'⛅ Partly Cloudy',3:'☁️ Overcast',45:'🌫️ Foggy',48:'🌫️ Icy Fog',51:'🌦️ Light Drizzle',61:'🌧️ Light Rain',63:'🌧️ Rain',65:'🌧️ Heavy Rain',71:'🌨️ Light Snow',73:'❄️ Snow',75:'❄️ Heavy Snow',80:'🌦️ Showers',95:'⛈️ Thunderstorm'};
     const desc = codes[c.weather_code] || '🌡️';
@@ -270,6 +270,32 @@ async function loadWeather() {
       return ' · 🌡️ Frost in ' + days + 'd';
     })();
     weatherEl.innerHTML = '<strong style="font-size:1.1rem;">' + Math.round(c.temperature_2m) + '°F</strong> <span>' + desc + '</span> <span style="color:var(--text-muted);font-size:0.85rem;">💨 ' + Math.round(c.wind_speed_10m) + ' mph' + (c.precipitation > 0 ? ' · 🌧️ ' + c.precipitation + '"' : '') + frostInfo + '</span>';
+
+    // 7 day forecast
+    const forecastEl = document.getElementById('weather-forecast');
+    if (forecastEl && weather.daily) {
+      const d = weather.daily;
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      let forecastHTML = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px;">';
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(d.time[i]);
+        const dayName = dayNames[date.getDay()];
+        const hi = Math.round(d.temperature_2m_max[i]);
+        const lo = Math.round(d.temperature_2m_min[i]);
+        const rain = d.precipitation_sum[i] > 0 ? '🌧️' : '';
+        const wcode = d.weather_code[i];
+        const icon = wcode <= 1 ? '☀️' : wcode <= 3 ? '⛅' : wcode <= 67 ? '🌧️' : wcode <= 77 ? '❄️' : '⛈️';
+        forecastHTML += '<div style="text-align:center;padding:4px;background:var(--green-bg);border-radius:6px;">' +
+          '<div style="font-size:0.75rem;font-weight:700;">' + dayName + '</div>' +
+          '<div style="font-size:1rem;">' + icon + '</div>' +
+          '<div style="font-size:0.75rem;font-weight:600;">' + hi + '°</div>' +
+          '<div style="font-size:0.7rem;color:var(--text-muted);">' + lo + '°</div>' +
+          (rain ? '<div style="font-size:0.65rem;">🌧️</div>' : '') +
+          '</div>';
+      }
+      forecastHTML += '</div>';
+      forecastEl.innerHTML = forecastHTML;
+    }
     if (state.settings.location_name !== (name + ', ' + admin1)) {
       await api('/api/settings', 'PUT', { key: 'location_name', value: name + ', ' + admin1 });
     }
@@ -512,6 +538,7 @@ function renderDashboard() {
         <div>
           <div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);margin-bottom:4px;">🌤️ ${state.settings.location_name || 'Local Weather'}</div>
           <div id="weather-data" style="font-size:0.9rem;color:var(--text-muted);">Loading weather...</div>
+        <div id="weather-forecast"></div>
         </div>
         ${state.settings.last_frost_date ? `
         <div style="text-align:right;">
@@ -679,6 +706,60 @@ function renderDashboard() {
           </div>
         `).join('')}
     </div>
+    ${state.settings.last_frost_date && state.seedLots.length > 0 ? `
+    <div class="card">
+      <div class="card-title">📅 Planting Calendar — ${new Date().getFullYear()}</div>
+      <div style="overflow-x:auto;">
+        <div style="display:grid;grid-template-columns:140px repeat(12,1fr);gap:2px;min-width:700px;font-size:0.75rem;">
+          <div style="font-weight:700;padding:4px;">Variety</div>
+          ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m => `<div style="text-align:center;font-weight:700;padding:4px;">${m}</div>`).join('')}
+          ${state.seedLots.map(lot => {
+            if (!lot.days_to_harvest && !lot.start_indoors_weeks && lot.direct_sow === undefined) return '';
+            const year = new Date().getFullYear();
+            const [lm, ld] = state.settings.last_frost_date.split('-').map(Number);
+            const [fm, fd] = (state.settings.first_frost_date || '10-15').split('-').map(Number);
+            const lastFrost = new Date(year, lm-1, ld);
+            const firstFrost = new Date(year, fm-1, fd);
+
+            const cells = Array(12).fill('');
+
+            if (lot.start_indoors_weeks) {
+              const startIndoors = new Date(lastFrost);
+              startIndoors.setDate(startIndoors.getDate() - lot.start_indoors_weeks * 7);
+              const endIndoors = new Date(lastFrost);
+              for (let m = startIndoors.getMonth(); m <= endIndoors.getMonth(); m++) {
+                if (m >= 0 && m < 12) cells[m] = 'indoor';
+              }
+            }
+
+            if (lot.direct_sow !== false) {
+              const directStart = new Date(lastFrost);
+              const dth = parseInt(lot.days_to_harvest) || parseInt((lot.days_to_harvest || '').split('-')[0]) || 70;
+              const lastPlant = new Date(firstFrost);
+              lastPlant.setDate(lastPlant.getDate() - dth);
+              for (let m = directStart.getMonth(); m <= Math.min(lastPlant.getMonth(), 11); m++) {
+                if (m >= 0 && m < 12) cells[m] = cells[m] === 'indoor' ? 'both' : 'outdoor';
+              }
+            }
+
+            const hasData = cells.some(c => c !== '');
+            if (!hasData) return '';
+
+            return '<div style="padding:4px;font-size:0.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (lot.variety_name || lot.variety_code) + '">' + (lot.variety_name || lot.variety_code) + '</div>' +
+              cells.map(c => {
+                const bg = c === 'indoor' ? '#a855f7' : c === 'outdoor' ? '#22c55e' : c === 'both' ? '#f59e0b' : 'transparent';
+                const title = c === 'indoor' ? 'Start indoors' : c === 'outdoor' ? 'Direct sow' : c === 'both' ? 'Transition' : '';
+                return '<div style="height:20px;background:' + bg + ';border-radius:3px;opacity:0.8;" title="' + title + '"></div>';
+              }).join('');
+          }).filter(Boolean).join('')}
+        </div>
+        <div style="display:flex;gap:12px;margin-top:8px;font-size:0.75rem;flex-wrap:wrap;">
+          <span><span style="display:inline-block;width:12px;height:12px;background:#a855f7;border-radius:2px;"></span> Start Indoors</span>
+          <span><span style="display:inline-block;width:12px;height:12px;background:#22c55e;border-radius:2px;"></span> Direct Sow</span>
+          <span><span style="display:inline-block;width:12px;height:12px;background:#f59e0b;border-radius:2px;"></span> Transition</span>
+        </div>
+      </div>
+    </div>` : ''}
     ${state.locations.length > 0 ? `
     <div class="card">
       <div class="card-title">📍 Garden Locations</div>
