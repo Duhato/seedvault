@@ -2206,32 +2206,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     tooltipEl.style.cssText = 'position:fixed;background:#1a1a1a;color:#fff;padding:6px 10px;border-radius:6px;font-size:0.78rem;max-width:200px;text-align:center;z-index:99999;line-height:1.4;pointer-events:none;display:none;';
     document.body.appendChild(tooltipEl);
   }
-  let tooltipTimer = null;
-  let lastTooltipEl = null;
-  document.addEventListener('mouseenter', e => {
-    const el = e.target.closest('[data-tip]');
-    if (!el || el === lastTooltipEl) return;
-    if (el.classList.contains('mobile-nav-btn')) return;
-    lastTooltipEl = el;
-    clearTimeout(tooltipTimer);
-    tooltipEl.style.display = 'none';
-    tooltipTimer = setTimeout(() => {
-      const rect = el.getBoundingClientRect();
-      tooltipEl.textContent = el.dataset.tooltip;
-      tooltipEl.style.display = 'block';
-      const left = rect.left + rect.width / 2 - tooltipEl.offsetWidth / 2;
-      const top = rect.bottom + 8;
-      tooltipEl.style.left = Math.max(8, left) + 'px';
-      tooltipEl.style.top = top + 'px';
-    }, 800);
-  }, true);
-  document.addEventListener('mouseleave', e => {
-    const el = e.target.closest('[data-tip]');
-    if (!el) return;
-    lastTooltipEl = null;
-    clearTimeout(tooltipTimer);
-    tooltipEl.style.display = 'none';
-  }, true);
+  let tipTimer = null;
+  document.querySelectorAll('[data-tip]').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      tipTimer = setTimeout(() => {
+        const tip = el.getAttribute('data-tip');
+        tooltipEl.textContent = tip;
+        tooltipEl.style.display = 'block';
+        const rect = el.getBoundingClientRect();
+        const left = Math.max(8, rect.left + rect.width / 2 - tooltipEl.offsetWidth / 2);
+        tooltipEl.style.left = left + 'px';
+        tooltipEl.style.top = (rect.bottom + 8) + 'px';
+      }, 800);
+    });
+    el.addEventListener('mouseleave', () => {
+      clearTimeout(tipTimer);
+      tooltipEl.style.display = 'none';
+    });
+  });
 
   await checkAuth();
   if (getToken()) { await loadAll(); render(); }
