@@ -43,6 +43,18 @@ const plantStorage = multer.diskStorage({
   }
 });
 
+const plantPhotoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = '/app/uploads/plants/' + req.params.designation.replace(/[^a-zA-Z0-9-_]/g, '_');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, Date.now() + ext);
+  }
+});
+
 const packetStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, '/app/uploads/packets'),
   filename: (req, file, cb) => {
@@ -61,6 +73,7 @@ const imageFilter = (req, file, cb) => {
 
 const uploadPlant = multer({ storage: plantStorage, fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 const uploadPacket = multer({ storage: packetStorage, fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+const uploadPlantPhoto = multer({ storage: plantPhotoStorage, fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
 function sanitizeString(str, maxLen = 255) {
   if (str === null || str === undefined) return null;
@@ -387,6 +400,41 @@ app.put('/api/users/:username/role', authMiddleware, adminMiddleware, async (req
     if (username === req.user.username) return res.status(400).json({ error: 'Cannot change your own role' });
     const role = req.body.role === 'admin' ? 'admin' : 'standard';
     await pool.query('UPDATE users SET role=$1 WHERE username=$2', [role, username]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// PLANT MULTI-PHOTO ROUTES
+app.get('/api/plants/:designation/photos', authMiddleware, async (req, res) => {
+  const designation = sanitizeString(req.params.designation, 50);
+  try { res.json((await pool.query('SELECT * FROM plant_photos WHERE plant_designation=$1 ORDER BY created_at DESC', [designation])).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/plants/:designation/photos', authMiddleware, (req, res) => {
+  uploadPlantPhoto.single('photo')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const designation = sanitizeString(req.params.designation, 50);
+    const photoPath = '/uploads/plants/' + designation.replace(/[^a-zA-Z0-9-_]/g, '_') + '/' + req.file.filename;
+    try {
+      const result = await pool.query('INSERT INTO plant_photos (plant_designation, photo_path, caption, taken_date) VALUES ($1, $2, $3, $4) RETURNING *',
+        [designation, photoPath, sanitizeString(req.body.caption, 255), sanitizeString(req.body.taken_date, 20) || null]);
+      res.json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+  });
+});
+
+app.delete('/api/plants/:designation/photos/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  const designation = sanitizeString(req.params.designation, 50);
+  try {
+    const result = await pool.query('SELECT * FROM plant_photos WHERE id=$1 AND plant_designation=$2', [id, designation]);
+    if (result.rows[0]?.photo_path) {
+      const fullPath = '/app' + result.rows[0].photo_path;
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
+    await pool.query('DELETE FROM plant_photos WHERE id=$1', [id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
@@ -897,6 +945,25 @@ app.put('/api/settings', authMiddleware, async (req, res) => {
     if (!key) return res.status(400).json({ error: 'Key required' });
     await pool.query('INSERT INTO user_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=NOW()', [sanitizeString(key, 50), sanitizeString(value, 255)]);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// SEED INVENTORY
+app.get('/api/inventory', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT sl.*, v.name as variety_name, v.species_code,
+        COUNT(DISTINCT p.designation) as plants_grown,
+        MAX(p.season_year) as last_grown_year,
+        COALESCE(SUM(hl.seed_count), 0) as seeds_harvested
+      FROM seed_lots sl
+      LEFT JOIN varieties v ON sl.variety_code = v.code
+      LEFT JOIN plants p ON p.seed_lot_designation = sl.designation
+      LEFT JOIN harvest_log hl ON hl.plant_designation = p.designation
+      GROUP BY sl.id, v.name, v.species_code
+      ORDER BY sl.designation
+    `);
+    res.json(result.rows);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 

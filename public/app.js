@@ -100,7 +100,7 @@ const state = {
   harvest: [], species: [], stats: {}, viability: [],
   germination: [], users: [], locations: [], sources: [],
   crosses: [], observations: [], amendments: [],
-  settings: {}
+  settings: {}, inventory: []
 };
 
 async function api(path, method = 'GET', body = null) {
@@ -123,7 +123,7 @@ async function loadAll() {
     api('/api/harvest'), api('/api/species'), api('/api/stats'), api('/api/viability'),
     api('/api/germination'), api('/api/locations'), api('/api/sources'),
     api('/api/crosses'), api('/api/observations'), api('/api/amendments'),
-    api('/api/settings'),
+    api('/api/settings'), api('/api/inventory'),
   ];
   if (getRole() === 'admin') calls.push(api('/api/users')); // index 15
   const results = await Promise.all(calls);
@@ -142,7 +142,8 @@ async function loadAll() {
   state.observations = Array.isArray(results[12]) ? results[12] : [];
   state.amendments = Array.isArray(results[13]) ? results[13] : [];
   state.settings = results[14] && !Array.isArray(results[14]) ? results[14] : {};
-  state.users = results[15] && Array.isArray(results[15]) ? results[15] : [];
+  state.inventory = Array.isArray(results[15]) ? results[15] : [];
+  state.users = results[16] && Array.isArray(results[16]) ? results[16] : [];
 }
 
 function navigate(page) {
@@ -1864,8 +1865,25 @@ function showPlantDetail(designation) {
         `).join('')}
       </div>` : ''}
 
+      ${(() => {
+        const locAmendments = p.location_id ? state.amendments.filter(a => a.location_id === p.location_id && !a.plant_designation) : [];
+        const allAmendments = [...plantAmendments, ...locAmendments].sort((a,b) => new Date(b.amendment_date) - new Date(a.amendment_date));
+        return allAmendments.length > 0 ? `
+        <div>
+          <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌿 Amendments (${allAmendments.length})</div>
+          ${allAmendments.map(a => `
+            <div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+              <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;">
+                <span><span class="tag tag-active">${a.type}</span>${a.product_name ? ' ' + a.product_name : ''}${a.location_name ? ' <span style="font-size:0.75rem;color:var(--text-muted);">(📍 ' + a.location_name + ')</span>' : ''}</span>
+                <span style="color:var(--text-muted);">${new Date(a.amendment_date).toLocaleDateString()}</span>
+              </div>
+              ${a.amount || a.method ? '<div style="color:var(--text-muted);margin-top:4px;">' + (a.amount || '') + ' ' + (a.method || '') + '</div>' : ''}
+            </div>
+          `).join('')}
+        </div>` : '';
+      })()}
       ${plantAmendments.length > 0 ? `
-      <div>
+      <div style="display:none;">
         <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌿 Amendments (${plantAmendments.length})</div>
         ${plantAmendments.map(a => `
           <div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
@@ -1919,9 +1937,19 @@ function showPlantDetail(designation) {
         `).join('')}
       </div>` : ''}
 
+      <div id="plant-photo-gallery-${designation}" style="margin-bottom:8px;">
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">📷 Photos</div>
+        <div id="plant-gallery-grid-${designation}" style="display:flex;flex-wrap:wrap;gap:8px;">
+          <div style="color:var(--text-muted);font-size:0.85rem;">Loading photos...</div>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+          <input type="file" id="gallery-upload-${designation}" accept="image/*" style="display:none" onchange="uploadPlantGalleryPhoto('${designation}')">
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('gallery-upload-${designation}').click()">📷 Add Photo</button>
+        </div>
+      </div>
+
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-primary btn-sm" onclick="closeModal();showEditPlant('${designation}');">✏️ Edit</button>
-        <button class="btn btn-secondary btn-sm" onclick="closeModal();showPlantPhotoUpload('${designation}');">📷 Photo</button>
         <button class="btn btn-secondary btn-sm" onclick="closeModal();showPlantQR('${designation}');">⬛ QR</button>
         <button class="btn btn-primary btn-sm" onclick="closeModal();showAddAmendment('${designation}');">🌿 Amend</button>
         <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${designation}', ${!p.selected_for_seed});closeModal();">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
@@ -1929,6 +1957,51 @@ function showPlantDetail(designation) {
       </div>
     </div>
   `);
+  loadPlantGallery('${designation}');
+}
+
+async function loadPlantGallery(designation) {
+  const grid = document.getElementById('plant-gallery-grid-' + designation);
+  if (!grid) return;
+  try {
+    const photos = await api('/api/plants/' + designation + '/photos');
+    if (!photos || photos.length === 0) {
+      grid.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">No photos yet — click Add Photo to upload.</span>';
+      return;
+    }
+    grid.innerHTML = photos.map(photo => `
+      <div style="position:relative;">
+        <img src="${photo.photo_path}" style="width:100px;height:100px;object-fit:cover;border-radius:6px;border:2px solid var(--border);cursor:pointer;" onclick="showFullPhoto('${photo.photo_path}', '${photo.caption || designation}')">
+        <button onclick="deletePlantGalleryPhoto('${designation}', ${photo.id})" style="position:absolute;top:2px;right:2px;background:rgba(239,68,68,0.9);border:none;color:white;border-radius:50%;width:20px;height:20px;font-size:0.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+        ${photo.caption ? `<div style="font-size:0.7rem;text-align:center;color:var(--text-muted);margin-top:2px;">${photo.caption}</div>` : ''}
+      </div>
+    `).join('');
+  } catch (err) { grid.innerHTML = '<span style="color:var(--text-muted);">Could not load photos</span>'; }
+}
+
+async function uploadPlantGalleryPhoto(designation) {
+  const input = document.getElementById('gallery-upload-' + designation);
+  const file = input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('photo', file);
+  try {
+    const res = await fetch('/api/plants/' + designation + '/photos', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + getToken() },
+      body: formData
+    });
+    const result = await res.json();
+    if (result.error) { alert('Upload failed: ' + result.error); return; }
+    await loadPlantGallery(designation);
+    input.value = '';
+  } catch (err) { alert('Upload failed: ' + err.message); }
+}
+
+async function deletePlantGalleryPhoto(designation, id) {
+  if (!confirm('Delete this photo?')) return;
+  await api('/api/plants/' + designation + '/photos/' + id, 'DELETE');
+  await loadPlantGallery(designation);
 }
 
 function renderPlants() {
@@ -3379,7 +3452,100 @@ function renderSettings() {
         <a href="https://github.com/Duhato/seedvault" target="_blank" class="btn btn-secondary">View on GitHub</a>
       </div>
     </div>
+    <div class="card">
+      <div class="settings-section-title">📊 Reports</div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Seed Inventory Report</h4><p>Print a full inventory of all your seed lots with quantities and viability.</p></div>
+        <button class="btn btn-primary" onclick="printInventoryReport()">🖨️ Print Inventory</button>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info"><h4>Variety Performance Report</h4><p>Compare germination rates, harvest counts and plant performance by variety.</p></div>
+        <button class="btn btn-secondary" onclick="printVarietyReport()">🖨️ Print Report</button>
+      </div>
+    </div>
   `;
+}
+
+function printInventoryReport() {
+  const currentYear = new Date().getFullYear();
+  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3, BEAN: 3, LETT: 3, SPIN: 3, CORN: 2, ONI: 1, PEA: 3, SQUA: 4, MELO: 5, HERB: 3 };
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html><html><head><title>SeedVault Inventory</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; color: #1a1a1a; }
+      h1 { color: #2d5a27; margin-bottom: 4px; }
+      h2 { color: #2d5a27; margin: 20px 0 10px; border-bottom: 2px solid #2d5a27; padding-bottom: 4px; }
+      table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 16px; }
+      th { background: #2d5a27; color: white; padding: 6px 8px; text-align: left; }
+      td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+      tr:nth-child(even) td { background: #f9f9f9; }
+      .good { color: #22c55e; font-weight: bold; }
+      .warning { color: #f59e0b; font-weight: bold; }
+      .expired { color: #ef4444; font-weight: bold; }
+      .footer { margin-top: 20px; font-size: 8pt; color: #999; border-top: 1px solid #eee; padding-top: 8px; }
+    </style></head><body>
+    <h1>🌱 SeedVault — Seed Inventory</h1>
+    <p style="color:#666;font-size:9pt;">Generated ${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</p>
+    <table>
+      <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Quantity</th><th>Storage</th><th>Germ Rate</th><th>Viability</th><th>Notes</th></tr></thead>
+      <tbody>
+        ${state.inventory.map(lot => {
+          const maxYears = viabilityYears[lot.species_code] || 3;
+          const yearsLeft = maxYears - (currentYear - lot.year_saved);
+          const viabilityClass = yearsLeft <= 0 ? 'expired' : yearsLeft <= 1 ? 'warning' : 'good';
+          const viabilityText = yearsLeft <= 0 ? 'Expired' : yearsLeft <= 1 ? 'Expiring soon' : yearsLeft + ' years left';
+          const qty = lot.quantity_unit === 'seeds' || !lot.quantity_unit
+            ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—')
+            : (lot.quantity_weight ? (parseFloat(lot.quantity_weight) % 1 === 0 ? parseInt(lot.quantity_weight) : parseFloat(lot.quantity_weight)) + lot.quantity_unit : '—');
+          return '<tr><td><code>' + lot.designation + '</code></td><td>' + (lot.variety_name || lot.variety_code) + '</td><td>G' + lot.generation + '</td><td>' + lot.year_saved + '</td><td>' + qty + '</td><td>' + (lot.storage_location || '—') + '</td><td>' + (lot.germination_rate ? lot.germination_rate + '%' : '—') + '</td><td class="' + viabilityClass + '">' + viabilityText + '</td><td style="font-size:8pt;max-width:150px;">' + (lot.notes ? lot.notes.substring(0, 60) : '—') + '</td></tr>';
+        }).join('')}
+      </tbody>
+    </table>
+    <div class="footer">SeedVault v1.1.1 · github.com/Duhato/seedvault · ${new Date().toISOString()}</div>
+    <script>setTimeout(() => window.print(), 400);</script>
+    </body></html>
+  `);
+  printWindow.document.close();
+}
+
+function printVarietyReport() {
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html><html><head><title>SeedVault Variety Performance</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; color: #1a1a1a; }
+      h1 { color: #2d5a27; margin-bottom: 4px; }
+      h2 { color: #2d5a27; margin: 20px 0 10px; border-bottom: 2px solid #2d5a27; padding-bottom: 4px; }
+      table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 16px; }
+      th { background: #2d5a27; color: white; padding: 6px 8px; text-align: left; }
+      td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+      tr:nth-child(even) td { background: #f9f9f9; }
+      .footer { margin-top: 20px; font-size: 8pt; color: #999; border-top: 1px solid #eee; padding-top: 8px; }
+    </style></head><body>
+    <h1>🌱 SeedVault — Variety Performance Report</h1>
+    <p style="color:#666;font-size:9pt;">Generated ${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</p>
+    <table>
+      <thead><tr><th>Variety</th><th>Code</th><th>Species</th><th>Type</th><th>Seed Lots</th><th>Plants Grown</th><th>Best Germ Rate</th><th>Harvests</th><th>Seeds Harvested</th></tr></thead>
+      <tbody>
+        ${state.varieties.map(v => {
+          const lots = state.seedLots.filter(l => l.variety_code === v.code);
+          const totalPlants = state.plants.filter(p => lots.some(l => l.designation === p.seed_lot_designation)).length;
+          const bestGerm = lots.reduce((best, l) => l.germination_rate ? Math.max(best, l.germination_rate) : best, 0);
+          const harvests = state.harvest.filter(h => {
+            const plant = state.plants.find(p => p.designation === h.plant_designation);
+            return plant && lots.some(l => l.designation === plant.seed_lot_designation);
+          });
+          const totalSeeds = harvests.reduce((sum, h) => sum + (h.seed_count || 0), 0);
+          return '<tr><td><strong>' + v.name + '</strong></td><td><code>' + v.code + '</code></td><td>' + (v.species_name || v.species_code) + '</td><td>' + v.type + '</td><td>' + lots.length + '</td><td>' + totalPlants + '</td><td>' + (bestGerm > 0 ? bestGerm + '%' : '—') + '</td><td>' + harvests.length + '</td><td>' + (totalSeeds > 0 ? totalSeeds : '—') + '</td></tr>';
+        }).join('')}
+      </tbody>
+    </table>
+    <div class="footer">SeedVault v1.1.1 · github.com/Duhato/seedvault · ${new Date().toISOString()}</div>
+    <script>setTimeout(() => window.print(), 400);</script>
+    </body></html>
+  `);
+  printWindow.document.close();
 }
 
 async function saveSetting(key, value) {
