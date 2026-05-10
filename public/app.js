@@ -176,6 +176,161 @@ function render() {
   }
 }
 
+function printSeasonSummary() {
+  const currentYear = new Date().getFullYear();
+  const thisYearPlants = state.plants.filter(p => p.season_year === currentYear);
+  const thisYearHarvest = state.harvest.filter(h => h.harvest_date && h.harvest_date.startsWith(currentYear.toString()));
+  const thisYearAmendments = state.amendments.filter(a => a.amendment_date && a.amendment_date.startsWith(currentYear.toString()));
+  const thisYearGerm = state.germination.filter(g => g.date_started && g.date_started.startsWith(currentYear.toString()));
+  const selectedPlants = thisYearPlants.filter(p => p.selected_for_seed);
+
+  const avgGermRate = thisYearGerm.filter(g => g.seeds_germinated !== null).length > 0
+    ? Math.round(thisYearGerm.filter(g => g.seeds_germinated !== null)
+        .reduce((sum, g) => sum + (g.seeds_germinated / g.seeds_planted * 100), 0)
+        / thisYearGerm.filter(g => g.seeds_germinated !== null).length)
+    : null;
+
+  const plantsByVariety = {};
+  thisYearPlants.forEach(p => {
+    const v = p.variety_name || 'Unknown';
+    plantsByVariety[v] = (plantsByVariety[v] || 0) + 1;
+  });
+
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>SeedVault Season Summary ${currentYear}</title>
+      <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: Arial, sans-serif; padding: 30px; color: #1a1a1a; max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 24pt; color: #2d5a27; margin-bottom: 4px; }
+        h2 { font-size: 14pt; color: #2d5a27; margin: 20px 0 10px; border-bottom: 2px solid #2d5a27; padding-bottom: 4px; }
+        h3 { font-size: 11pt; margin-bottom: 6px; }
+        .subtitle { font-size: 11pt; color: #666; margin-bottom: 24px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .stat-box { border: 1px solid #ddd; border-radius: 6px; padding: 12px; text-align: center; }
+        .stat-number { font-size: 22pt; font-weight: bold; color: #2d5a27; }
+        .stat-label { font-size: 8pt; color: #666; margin-top: 2px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 9pt; }
+        th { background: #2d5a27; color: white; padding: 6px 8px; text-align: left; }
+        td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+        tr:nth-child(even) td { background: #f9f9f9; }
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 8pt; font-weight: bold; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-star { color: #f59e0b; }
+        .footer { margin-top: 30px; font-size: 8pt; color: #999; text-align: center; border-top: 1px solid #eee; padding-top: 12px; }
+        @media print { body { padding: 15px; } }
+      </style>
+    </head>
+    <body>
+      <h1>🌱 SeedVault</h1>
+      <div class="subtitle">Season Summary — ${currentYear} · Generated ${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</div>
+
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-number">${thisYearPlants.length}</div><div class="stat-label">Plants This Season</div></div>
+        <div class="stat-box"><div class="stat-number">${selectedPlants.length}</div><div class="stat-label">Selected for Seed Saving</div></div>
+        <div class="stat-box"><div class="stat-number">${thisYearHarvest.length}</div><div class="stat-label">Harvest Records</div></div>
+        <div class="stat-box"><div class="stat-number">${avgGermRate !== null ? avgGermRate + '%' : '—'}</div><div class="stat-label">Avg Germination Rate</div></div>
+      </div>
+
+      <h2>🪴 Plants This Season</h2>
+      ${thisYearPlants.length === 0 ? '<p style="color:#666;font-size:9pt;">No plants logged this season.</p>' : `
+      <table>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Season</th><th>Seed Save</th></tr></thead>
+        <tbody>
+          ${thisYearPlants.map(p => `<tr>
+            <td><code>${p.designation}</code></td>
+            <td>${p.variety_name || '—'}</td>
+            <td>${p.location_name || '—'}</td>
+            <td>${p.season_type}</td>
+            <td>${p.selected_for_seed ? '<span class="badge-star">⭐ Selected</span>' : '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+
+      <h2>🫙 Seed Lots in Vault</h2>
+      <table>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Quantity</th><th>Storage</th><th>Germ Rate</th></tr></thead>
+        <tbody>
+          ${state.seedLots.map(l => {
+            const qty = l.quantity_unit === 'seeds' || !l.quantity_unit
+              ? (l.quantity_estimate ? l.quantity_estimate + ' seeds' : '—')
+              : (l.quantity_weight ? l.quantity_weight + l.quantity_unit : '—');
+            return `<tr>
+              <td><code>${l.designation}</code></td>
+              <td>${l.variety_name || l.variety_code}</td>
+              <td><span class="badge badge-green">G${l.generation}</span></td>
+              <td>${l.year_saved}</td>
+              <td>${qty}</td>
+              <td>${l.storage_location || '—'}</td>
+              <td>${l.germination_rate ? l.germination_rate + '%' : '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+
+      ${thisYearGerm.length > 0 ? `
+      <h2>🌿 Germination Tests</h2>
+      <table>
+        <thead><tr><th>Seed Lot</th><th>Started</th><th>Planted</th><th>Germinated</th><th>Rate</th><th>Days</th></tr></thead>
+        <tbody>
+          ${thisYearGerm.map(g => {
+            const rate = g.seeds_germinated !== null ? Math.round(g.seeds_germinated / g.seeds_planted * 100) : null;
+            return `<tr>
+              <td><code>${g.seed_lot_designation}</code></td>
+              <td>${new Date(g.date_started).toLocaleDateString()}</td>
+              <td>${g.seeds_planted}</td>
+              <td>${g.seeds_germinated !== null ? g.seeds_germinated : '—'}</td>
+              <td>${rate !== null ? rate + '%' : '—'}</td>
+              <td>${g.days_to_germination !== null ? g.days_to_germination + 'd' : '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>` : ''}
+
+      ${thisYearAmendments.length > 0 ? `
+      <h2>🌿 Amendments & Fertilizer</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Type</th><th>Product</th><th>Plant/Location</th><th>Amount</th><th>Method</th></tr></thead>
+        <tbody>
+          ${thisYearAmendments.map(a => `<tr>
+            <td>${new Date(a.amendment_date).toLocaleDateString()}</td>
+            <td>${a.type}</td>
+            <td>${a.product_name || '—'}</td>
+            <td>${a.plant_designation || a.location_name || '—'}</td>
+            <td>${a.amount || '—'}</td>
+            <td>${a.method || '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : ''}
+
+      ${thisYearHarvest.length > 0 ? `
+      <h2>📋 Harvest Log</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Plant</th><th>Variety</th><th>Length</th><th>Weight</th><th>Seeds</th><th>Method</th></tr></thead>
+        <tbody>
+          ${thisYearHarvest.map(h => `<tr>
+            <td>${new Date(h.harvest_date).toLocaleDateString()}</td>
+            <td><code>${h.plant_designation}</code></td>
+            <td>${h.variety_name || '—'}</td>
+            <td>${h.fruit_length_inches ? h.fruit_length_inches + '"' : '—'}</td>
+            <td>${h.fruit_weight_oz ? h.fruit_weight_oz + ' oz' : '—'}</td>
+            <td>${h.seed_count || '—'}</td>
+            <td>${h.processing_method || '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : ''}
+
+      <div class="footer">Generated by SeedVault · github.com/Duhato/seedvault · ${new Date().toISOString()}</div>
+      <script>setTimeout(() => window.print(), 400);</script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
 function renderDashboard() {
   const s = state.stats;
   const recentLots = [...state.seedLots].slice(0, 5);
@@ -208,7 +363,10 @@ function renderDashboard() {
   return `
     <div class="page-header">
       <h1 class="page-title">🌱 SeedVault Dashboard</h1>
-      <span style="color:var(--text-muted);font-size:0.9rem;">${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</span>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="color:var(--text-muted);font-size:0.9rem;">${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</span>
+        <button class="btn btn-secondary btn-sm" onclick="printSeasonSummary()">🖨️ Season Summary</button>
+      </div>
     </div>
     <div class="stats-grid">
       <div class="stat-card clickable" onclick="navigate('varieties')"><div class="stat-number">${s.varieties || 0}</div><div class="stat-label">Varieties</div></div>
