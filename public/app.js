@@ -1538,6 +1538,115 @@ async function deleteSeedLot(designation) {
   await api('/api/seed-lots/' + designation, 'DELETE'); await loadAll(); render();
 }
 
+function showPlantDetail(designation) {
+  const p = state.plants.find(x => x.designation === designation);
+  if (!p) return;
+  const lot = state.seedLots.find(l => l.designation === p.seed_lot_designation);
+  const plantHarvest = state.harvest.filter(h => h.plant_designation === designation);
+  const plantObs = state.observations.filter(o => o.plant_designation === designation);
+  const plantAmendments = state.amendments.filter(a => a.plant_designation === designation);
+  const plantCrosses = state.crosses.filter(c => c.mother_designation === designation || c.father_designation === designation);
+
+  openModal('🪴 ' + designation, `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:1.1rem;font-weight:700;">${p.variety_name || '—'}</div>
+          <div style="font-size:0.85rem;color:var(--text-muted);">${p.season_type} ${p.season_year} · ${p.location_name ? '📍 ' + p.location_name : 'No location'}</div>
+          ${p.selected_for_seed ? '<span class="seed-star" style="font-size:0.9rem;">⭐ Selected for Seed Saving</span>' : ''}
+        </div>
+        ${p.photo_path ? `<img src="${p.photo_path}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--border);cursor:pointer;" onclick="showPlantPhoto('${designation}')">` : ''}
+      </div>
+
+      <div style="background:var(--green-bg);padding:12px;border-radius:8px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Seed Lot</span>
+            <div style="font-weight:600;cursor:pointer;" onclick="closeModal();showSeedLotDetail('${p.seed_lot_designation}')">${p.seed_lot_designation}</div>
+          </div>
+          ${lot ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Generation</span><div style="font-weight:600;">G${lot.generation}</div></div>` : ''}
+          ${lot && lot.storage_location ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Storage</span><div style="font-weight:600;">${lot.storage_location}</div></div>` : ''}
+        </div>
+        ${p.notes ? `<div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">${p.notes}</div>` : ''}
+      </div>
+
+      ${plantHarvest.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">📋 Harvest Records (${plantHarvest.length})</div>
+        ${plantHarvest.map(h => `
+          <div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;">
+              <span>${h.harvest_date ? new Date(h.harvest_date).toLocaleDateString() : '—'}</span>
+              <span style="color:var(--text-muted);">${h.condition || ''}</span>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;color:var(--text-muted);">
+              ${h.fruit_length_inches ? `<span>📏 ${h.fruit_length_inches}"</span>` : ''}
+              ${h.fruit_weight_oz ? `<span>⚖️ ${h.fruit_weight_oz}oz</span>` : ''}
+              ${h.seed_count ? `<span>🌱 ${h.seed_count} seeds</span>` : ''}
+              ${h.processing_method ? `<span>${h.processing_method}</span>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      ${plantObs.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🔍 Observations (${plantObs.length})</div>
+        ${plantObs.map(o => `
+          <div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+            <div style="display:flex;justify-content:space-between;">
+              <span>${new Date(o.observation_date).toLocaleDateString()}</span>
+              ${o.fruit_count !== null ? `<span>🍅 ${o.fruit_count} fruit</span>` : ''}
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;color:var(--text-muted);">
+              ${o.color ? `<span>🎨 ${o.color}</span>` : ''}
+              ${o.avg_length_inches ? `<span>📏 ${o.avg_length_inches}"</span>` : ''}
+              ${o.flavor_notes ? `<span>😋 ${o.flavor_notes}</span>` : ''}
+            </div>
+            ${o.health_notes ? `<div style="color:#f59e0b;margin-top:4px;">⚕️ ${o.health_notes}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      ${plantAmendments.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌿 Amendments (${plantAmendments.length})</div>
+        ${plantAmendments.map(a => `
+          <div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;">
+              <span><span class="tag tag-active">${a.type}</span>${a.product_name ? ' ' + a.product_name : ''}</span>
+              <span style="color:var(--text-muted);">${new Date(a.amendment_date).toLocaleDateString()}</span>
+            </div>
+            ${a.amount || a.method ? `<div style="color:var(--text-muted);margin-top:4px;">${a.amount || ''} ${a.method || ''}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      ${plantCrosses.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌸 Cross Pollinations (${plantCrosses.length})</div>
+        ${plantCrosses.map(c => `
+          <div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+            <span class="designation" style="font-size:0.75rem;">${c.mother_designation}</span>
+            <span style="margin:0 6px;">×</span>
+            <span class="designation" style="font-size:0.75rem;">${c.father_designation || '?'}</span>
+            <span style="margin-left:8px;color:${c.success === true ? '#22c55e' : c.success === false ? '#ef4444' : '#f59e0b'};">${c.success === true ? '✅' : c.success === false ? '❌' : '⏳'}</span>
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="closeModal();showEditPlant('${designation}');">✏️ Edit</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal();showPlantPhotoUpload('${designation}');">📷 Photo</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal();showPlantQR('${designation}');">⬛ QR</button>
+        <button class="btn btn-primary btn-sm" onclick="closeModal();showAddAmendment('${designation}');">🌿 Amend</button>
+        <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${designation}', ${!p.selected_for_seed});closeModal();">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal();printSeedLabel('${p.seed_lot_designation}');">🏷️ Label</button>
+      </div>
+    </div>
+  `);
+}
+
 function renderPlants() {
   const year = new Date().getFullYear();
   const searchTerm = (document.getElementById('plant-search')?.value || '').toLowerCase();
@@ -1576,14 +1685,14 @@ function renderPlants() {
       ${thisYear.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🪴</div><p>${allThisYear.length === 0 ? 'No plants logged this season yet.' : 'No plants match your search.'}</p></div>`
       : `<div class="table-wrap"><table>
         <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Photo</th><th>Season</th><th>Seed Save</th><th>Actions</th></tr></thead>
-        <tbody>${thisYear.map(p => `<tr>
+        <tbody>${thisYear.map(p => `<tr style="cursor:pointer;" onclick="showPlantDetail('${p.designation}')">
           <td><span class="designation">${p.designation}</span></td>
           <td>${p.variety_name || '—'}</td>
           <td>${p.location_name ? '<span style="font-size:0.85rem;">📍 ' + p.location_name + '</span>' : '—'}</td>
-          <td>${p.photo_path ? `<img src="${p.photo_path}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="showPlantPhoto('${p.designation}')">` : '<span style="color:var(--text-muted);font-size:0.8rem;">—</span>'}</td>
+          <td onclick="event.stopPropagation()">${p.photo_path ? `<img src="${p.photo_path}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="showPlantPhoto('${p.designation}')">` : '<span style="color:var(--text-muted);font-size:0.8rem;">—</span>'}</td>
           <td>${p.season_type}</td>
           <td>${p.selected_for_seed ? '<span class="seed-star">⭐ Selected</span>' : '—'}</td>
-          <td style="display:flex;gap:4px;flex-wrap:wrap;">
+          <td onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;">
             <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
             <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
             <button class="btn btn-secondary btn-sm" onclick="showPlantPhotoUpload('${p.designation}')">📷</button>
@@ -2287,10 +2396,37 @@ async function deleteLocation(id) {
 }
 
 function renderCrosses() {
+  const searchTerm = (document.getElementById('cross-search')?.value || '').toLowerCase();
+  const filterStatus = document.getElementById('cross-filter-status')?.value || '';
+  let filteredCrosses = state.crosses.filter(c => {
+    const matchSearch = !searchTerm ||
+      c.mother_designation.toLowerCase().includes(searchTerm) ||
+      (c.father_designation || '').toLowerCase().includes(searchTerm) ||
+      (c.project_code || '').toLowerCase().includes(searchTerm) ||
+      (c.notes || '').toLowerCase().includes(searchTerm);
+    const matchStatus = !filterStatus ||
+      (filterStatus === 'pending' && c.success === null) ||
+      (filterStatus === 'success' && c.success === true) ||
+      (filterStatus === 'failed' && c.success === false);
+    return matchSearch && matchStatus;
+  });
   return `
     <div class="page-header"><h1 class="page-title">🌸 Cross Pollination</h1><button class="btn btn-primary" onclick="showAddCross()">+ Log Cross</button></div>
-    ${state.crosses.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🌸</div><p>No cross pollinations logged yet.</p></div></div>`
-    : state.crosses.map(c => {
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="cross-search" placeholder="🔍 Search crosses..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="cross-filter-status" style="max-width:150px;" onchange="render()">
+          <option value="">All Status</option>
+          <option value="pending" ${filterStatus === 'pending' ? 'selected' : ''}>⏳ Pending</option>
+          <option value="success" ${filterStatus === 'success' ? 'selected' : ''}>✅ Success</option>
+          <option value="failed" ${filterStatus === 'failed' ? 'selected' : ''}>❌ Failed</option>
+        </select>
+        ${searchTerm || filterStatus ? `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('cross-search').value='';document.getElementById('cross-filter-status').value='';render()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredCrosses.length} of ${state.crosses.length} crosses</span>
+      </div>
+    </div>
+    ${filteredCrosses.length === 0 ? `<div class="card"><div class="empty-state"><div class="empty-state-icon">🌸</div><p>${state.crosses.length === 0 ? 'No cross pollinations logged yet.' : 'No crosses match your search.'}</p></div></div>`
+    : filteredCrosses.map(c => {
       const statusColor = c.success === true ? '#22c55e' : c.success === false ? '#ef4444' : '#f59e0b';
       const statusText = c.success === true ? '✅ Success' : c.success === false ? '❌ Failed' : '⏳ Pending';
       return `
@@ -2703,7 +2839,8 @@ function renderSettings() {
     <div class="card">
       <div class="settings-section-title">ℹ️ About SeedVault</div>
       <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.0.0</p></div></div>
-      <div class="settings-row"><div class="settings-row-info"><h4>Database Records</h4><p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season</p></div></div>
+      <div class="settings-row"><div class="settings-row-info"><h4>Database Records</h4><p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season · ${state.germination.length} germination tests · ${state.harvest.length} harvest records · ${state.amendments.length} amendments</p></div></div>
+      <div class="settings-row"><div class="settings-row-info"><h4>Photos</h4><p>${state.plants.filter(p => p.photo_path).length} plant photos · ${state.seedLots.filter(l => l.packet_front_path || l.packet_back_path).length} seed packets with photos</p></div></div>
       <div class="settings-row">
         <div class="settings-row-info"><h4>Source Code</h4><p>github.com/Duhato/seedvault — AGPL-3.0 License</p></div>
         <a href="https://github.com/Duhato/seedvault" target="_blank" class="btn btn-secondary">View on GitHub</a>
