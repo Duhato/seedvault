@@ -181,6 +181,30 @@ function renderDashboard() {
   const recentLots = [...state.seedLots].slice(0, 5);
   const selectedPlants = state.plants.filter(p => p.selected_for_seed);
   const pendingCrosses = state.crosses.filter(c => c.success === null);
+  const currentYear = new Date().getFullYear();
+
+  // Chart data
+  const speciesCounts = {};
+  state.seedLots.forEach(l => {
+    const sp = l.species_code || 'Other';
+    speciesCounts[sp] = (speciesCounts[sp] || 0) + 1;
+  });
+
+  const plantsByVariety = {};
+  state.plants.filter(p => p.season_year === currentYear).forEach(p => {
+    const v = p.variety_name || p.variety_code || 'Unknown';
+    plantsByVariety[v] = (plantsByVariety[v] || 0) + 1;
+  });
+
+  const recentAmendments = state.amendments.slice(0, 5);
+  const totalHarvest = state.harvest.length;
+  const totalGermTests = state.germination.length;
+  const avgGermRate = state.germination.filter(g => g.seeds_germinated !== null).length > 0
+    ? Math.round(state.germination.filter(g => g.seeds_germinated !== null)
+        .reduce((sum, g) => sum + (g.seeds_germinated / g.seeds_planted * 100), 0)
+        / state.germination.filter(g => g.seeds_germinated !== null).length)
+    : null;
+
   return `
     <div class="page-header">
       <h1 class="page-title">🌱 SeedVault Dashboard</h1>
@@ -192,6 +216,76 @@ function renderDashboard() {
       <div class="stat-card clickable" onclick="navigate('plants')"><div class="stat-number">${s.activePlants || 0}</div><div class="stat-label">Plants This Season</div></div>
       <div class="stat-card clickable" onclick="navigate('projects')"><div class="stat-number">${s.activeProjects || 0}</div><div class="stat-label">Active Projects</div></div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;">
+      <div class="stat-card" style="cursor:default;">
+        <div class="stat-number" style="color:${avgGermRate >= 80 ? '#22c55e' : avgGermRate >= 50 ? '#f59e0b' : '#ef4444'}">${avgGermRate !== null ? avgGermRate + '%' : '—'}</div>
+        <div class="stat-label">Avg Germination Rate</div>
+      </div>
+      <div class="stat-card clickable" onclick="navigate('harvest')">
+        <div class="stat-number">${totalHarvest}</div>
+        <div class="stat-label">Harvest Records</div>
+      </div>
+      <div class="stat-card clickable" onclick="navigate('amendments')">
+        <div class="stat-number">${state.amendments.length}</div>
+        <div class="stat-label">Amendments Logged</div>
+      </div>
+    </div>
+    ${Object.keys(speciesCounts).length > 0 ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+      <div class="card">
+        <div class="card-title">🫙 Seed Lots by Species</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${Object.entries(speciesCounts).sort((a,b) => b[1]-a[1]).map(([sp, count]) => {
+            const pct = Math.round(count / state.seedLots.length * 100);
+            const colors = {CUC:'#22c55e', TOM:'#ef4444', PEP:'#f59e0b', CAR:'#f97316', Other:'#6b7280'};
+            const color = colors[sp] || '#6b7280';
+            return `<div>
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:3px;">
+                <span>${sp}</span><span style="color:var(--text-muted);">${count} lot${count !== 1 ? 's' : ''}</span>
+              </div>
+              <div style="background:var(--border);border-radius:4px;height:8px;">
+                <div style="background:${color};width:${pct}%;height:8px;border-radius:4px;transition:width 0.3s;"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">🪴 Plants This Season by Variety</div>
+        ${Object.keys(plantsByVariety).length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No plants this season yet.</p>' : `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${Object.entries(plantsByVariety).sort((a,b) => b[1]-a[1]).map(([v, count]) => {
+            const total = Object.values(plantsByVariety).reduce((a,b) => a+b, 0);
+            const pct = Math.round(count / total * 100);
+            return `<div>
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:3px;">
+                <span>${v}</span><span style="color:var(--text-muted);">${count} plant${count !== 1 ? 's' : ''}</span>
+              </div>
+              <div style="background:var(--border);border-radius:4px;height:8px;">
+                <div style="background:var(--green-mid);width:${pct}%;height:8px;border-radius:4px;transition:width 0.3s;"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>`}
+      </div>
+    </div>` : ''}
+    ${recentAmendments.length > 0 ? `
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-title">🌿 Recent Amendments</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${recentAmendments.map(a => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;font-size:0.85rem;">
+            <div>
+              <span class="tag tag-active">${a.type}</span>
+              ${a.product_name ? `<strong style="margin-left:6px;">${a.product_name}</strong>` : ''}
+              ${a.plant_designation ? `<span style="margin-left:6px;color:var(--text-muted);">${a.plant_designation}</span>` : ''}
+              ${a.location_name ? `<span style="margin-left:6px;color:var(--text-muted);">📍 ${a.location_name}</span>` : ''}
+            </div>
+            <span style="color:var(--text-muted);">${new Date(a.amendment_date).toLocaleDateString()}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
     ${state.viability.length > 0 ? `
     <div class="card" style="border-left:4px solid #ef4444;">
       <div class="card-title">⚠️ Seed Viability Warnings</div>
