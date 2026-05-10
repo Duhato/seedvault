@@ -929,6 +929,87 @@ app.delete('/api/observations/:id', authMiddleware, async (req, res) => {
   catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// WEATHER LOG
+app.get('/api/weather', authMiddleware, async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 365;
+    res.json((await pool.query(`SELECT * FROM weather_log WHERE log_date >= NOW() - INTERVAL '${days} days' ORDER BY log_date DESC`)).rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/weather', authMiddleware, async (req, res) => {
+  try {
+    const { log_date, high_temp_f, low_temp_f, precip_inches, condition, wind_speed_mph, source, notes } = req.body;
+    if (!log_date) return res.status(400).json({ error: 'Date required' });
+    const src = sanitizeString(source, 20) || 'manual';
+    const result = await pool.query(
+      'INSERT INTO weather_log (log_date, high_temp_f, low_temp_f, precip_inches, condition, wind_speed_mph, source, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (log_date, source) DO UPDATE SET high_temp_f=$2, low_temp_f=$3, precip_inches=$4, condition=$5, wind_speed_mph=$6, notes=$8, created_at=NOW() RETURNING *',
+      [log_date, validateDecimal(high_temp_f), validateDecimal(low_temp_f), validateDecimal(precip_inches), sanitizeString(condition, 100), validateDecimal(wind_speed_mph), src, sanitizeString(notes, 500)]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/weather/:id', authMiddleware, async (req, res) => {
+  const id = validateInt(req.params.id, 1);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try { await pool.query('DELETE FROM weather_log WHERE id=$1', [id]); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// FROST EVENTS
+app.get('/api/frost-events', authMiddleware, async (req, res) => {
+  try { res.json((await pool.query('SELECT * FROM frost_events ORDER BY year DESC, event_date')).rows); }
+  catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/frost-events', authMiddleware, async (req, res) => {
+  try {
+    const { year, event_type, event_date, confirmed, notes } = req.body;
+    if (!year || !event_type || !event_date) return res.status(400).json({ error: 'Year, type and date required' });
+    const result = await pool.query(
+      'INSERT INTO frost_events (year, event_type, event_date, confirmed, notes) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (year, event_type) DO UPDATE SET event_date=$3, confirmed=$4, notes=$5 RETURNING *',
+      [validateYear(year), sanitizeString(event_type, 20), sanitizeString(event_date, 20), confirmed === true || confirmed === 'true', sanitizeString(notes, 500)]
+    );
+    // Update user settings with new frost date
+    if (confirmed) {
+      const mmdd = event_date.substring(5);
+      const key = event_type === 'last_spring' ? 'last_frost_date' : 'first_frost_date';
+      await pool.query('INSERT INTO user_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value=$2', [key, mmdd]);
+    }
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/weather/summary', authMiddleware, async (req, res) => {
+  try {
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const result = await pool.query(`
+      SELECT
+        COUNT(*) as days_logged,
+        ROUND(AVG(high_temp_f)::numeric, 1) as avg_high,
+        ROUND(AVG(low_temp_f)::numeric, 1) as avg_low,
+        ROUND(SUM(precip_inches)::numeric, 2) as total_precip,
+        MAX(high_temp_f) as max_temp,
+        MIN(low_temp_f) as min_temp,
+        COUNT(CASE WHEN low_temp_f <= 32 THEN 1 END) as frost_days
+      FROM weather_log
+      WHERE EXTRACT(YEAR FROM log_date) = $1
+    `, [year]);
+    const frostEvents = (await pool.query('SELECT * FROM frost_events WHERE year=$1 ORDER BY event_date', [year])).rows;
+    const avgFrost = await pool.query(`
+      SELECT
+        event_type,
+        ROUND(AVG(EXTRACT(DOY FROM event_date))) as avg_doy,
+        COUNT(*) as years_recorded
+      FROM frost_events
+      WHERE confirmed = true
+      GROUP BY event_type
+    `);
+    res.json({ ...result.rows[0], frost_events: frostEvents, frost_averages: avgFrost.rows });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 // USER SETTINGS
 app.get('/api/settings', authMiddleware, async (req, res) => {
   try {

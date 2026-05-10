@@ -100,7 +100,7 @@ const state = {
   harvest: [], species: [], stats: {}, viability: [],
   germination: [], users: [], locations: [], sources: [],
   crosses: [], observations: [], amendments: [],
-  settings: {}, inventory: []
+  settings: {}, inventory: [], weatherLog: [], frostEvents: []
 };
 
 async function api(path, method = 'GET', body = null) {
@@ -124,6 +124,7 @@ async function loadAll() {
     api('/api/germination'), api('/api/locations'), api('/api/sources'),
     api('/api/crosses'), api('/api/observations'), api('/api/amendments'),
     api('/api/settings'), api('/api/inventory'),
+    api('/api/weather?days=365'), api('/api/frost-events'),
   ];
   if (getRole() === 'admin') calls.push(api('/api/users')); // index 15
   const results = await Promise.all(calls);
@@ -143,7 +144,9 @@ async function loadAll() {
   state.amendments = Array.isArray(results[13]) ? results[13] : [];
   state.settings = results[14] && !Array.isArray(results[14]) ? results[14] : {};
   state.inventory = Array.isArray(results[15]) ? results[15] : [];
-  state.users = results[16] && Array.isArray(results[16]) ? results[16] : [];
+  state.weatherLog = Array.isArray(results[16]) ? results[16] : [];
+  state.frostEvents = Array.isArray(results[17]) ? results[17] : [];
+  state.users = results[18] && Array.isArray(results[18]) ? results[18] : [];
 }
 
 function navigate(page) {
@@ -176,6 +179,7 @@ function render() {
     case 'crosses': main.innerHTML = renderCrosses(); break;
     case 'observations': main.innerHTML = renderObservations(); break;
     case 'amendments': main.innerHTML = renderAmendments(); break;
+    case 'weather': main.innerHTML = renderWeather(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
   }
 }
@@ -247,18 +251,18 @@ function getPlantingWindow(lot) {
 
 async function loadWeather() {
   const zip = state.settings.zip_code;
-  if (!zip) return;
+  const apiKey = state.settings.openweather_api_key;
+  if (!zip || !apiKey) return;
   const weatherEl = document.getElementById('weather-data');
   if (!weatherEl) return;
   try {
-    // Convert zip to lat/long using free geocoding
-    const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${zip}&count=1&language=en&format=json`).then(r => r.json());
-    if (!geo.results || geo.results.length === 0) { weatherEl.textContent = 'Location not found'; return; }
-    const { latitude, longitude, name, admin1 } = geo.results[0];
-    const weather = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto`).then(r => r.json());
-    const c = weather.current;
-    const codes = {0:'☀️ Clear',1:'🌤️ Mainly Clear',2:'⛅ Partly Cloudy',3:'☁️ Overcast',45:'🌫️ Foggy',48:'🌫️ Icy Fog',51:'🌦️ Light Drizzle',61:'🌧️ Light Rain',63:'🌧️ Rain',65:'🌧️ Heavy Rain',71:'🌨️ Light Snow',73:'❄️ Snow',75:'❄️ Heavy Snow',80:'🌦️ Showers',95:'⛈️ Thunderstorm'};
-    const desc = codes[c.weather_code] || '🌡️';
+    const weather = await fetch(`https://api.openweathermap.org/data/2.5/weather?zip=${zip},US&appid=${apiKey}&units=imperial`).then(r => r.json());
+    if (weather.cod !== 200) { weatherEl.textContent = 'Weather unavailable — check API key in Settings'; return; }
+    const forecast = await fetch(`https://api.openweathermap.org/data/2.5/forecast?zip=${zip},US&appid=${apiKey}&units=imperial&cnt=40`).then(r => r.json());
+    const c = weather;
+    const desc = '🌡️ ' + (weather.weather[0]?.description || '');
+    const name = weather.name;
+    const admin1 = 'WV';
     const frostInfo = (() => {
       if (!state.settings.last_frost_date) return '';
       const today = new Date();
@@ -270,36 +274,55 @@ async function loadWeather() {
       if (days === 0) return ' · 🌡️ Frost today';
       return ' · 🌡️ Frost in ' + days + 'd';
     })();
-    weatherEl.innerHTML = '<strong style="font-size:1.1rem;">' + Math.round(c.temperature_2m) + '°F</strong> <span>' + desc + '</span> <span style="color:var(--text-muted);font-size:0.85rem;">💨 ' + Math.round(c.wind_speed_10m) + ' mph' + (c.precipitation > 0 ? ' · 🌧️ ' + c.precipitation + '"' : '') + frostInfo + '</span>';
+    weatherEl.innerHTML = '<strong style="font-size:1.1rem;">' + Math.round(c.main.temp) + '°F</strong> <span>' + (c.weather[0]?.description || '') + '</span> <span style="color:var(--text-muted);font-size:0.85rem;">💨 ' + Math.round(c.wind.speed) + ' mph' + (c.rain ? ' · 🌧️' : '') + frostInfo + '</span>';
 
-    // 7 day forecast
+    // 5 day forecast from OpenWeatherMap
     const forecastEl = document.getElementById('weather-forecast');
-    if (forecastEl && weather.daily) {
-      const d = weather.daily;
+    if (forecastEl && forecast.list) {
       const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      let forecastHTML = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px;">';
-      for (let i = 0; i < 7; i++) {
-        const date = new Date(d.time[i]);
-        const dayName = dayNames[date.getDay()];
-        const hi = Math.round(d.temperature_2m_max[i]);
-        const lo = Math.round(d.temperature_2m_min[i]);
-        const rain = d.precipitation_sum[i] > 0 ? '🌧️' : '';
-        const wcode = d.weather_code[i];
-        const icon = wcode <= 1 ? '☀️' : wcode <= 3 ? '⛅' : wcode <= 67 ? '🌧️' : wcode <= 77 ? '❄️' : '⛈️';
+      const days = {};
+      forecast.list.forEach(item => {
+        const date = new Date(item.dt * 1000);
+        const key = date.toDateString();
+        if (!days[key]) days[key] = { date, temps: [], icons: [], rain: false };
+        days[key].temps.push(item.main.temp_max, item.main.temp_min);
+        days[key].icons.push(item.weather[0]?.icon || '');
+        if (item.rain) days[key].rain = true;
+      });
+      const dayKeys = Object.keys(days).slice(0, 5);
+      let forecastHTML = '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:10px;">';
+      dayKeys.forEach(key => {
+        const d = days[key];
+        const hi = Math.round(Math.max(...d.temps));
+        const lo = Math.round(Math.min(...d.temps));
+        const dayName = dayNames[d.date.getDay()];
+        const icon = d.icons[0] ? `<img src="https://openweathermap.org/img/wn/${d.icons[0]}.png" style="width:30px;height:30px;">` : '🌡️';
         forecastHTML += '<div style="text-align:center;padding:4px;background:var(--green-bg);border-radius:6px;">' +
           '<div style="font-size:0.75rem;font-weight:700;">' + dayName + '</div>' +
-          '<div style="font-size:1rem;">' + icon + '</div>' +
+          icon +
           '<div style="font-size:0.75rem;font-weight:600;">' + hi + '°</div>' +
           '<div style="font-size:0.7rem;color:var(--text-muted);">' + lo + '°</div>' +
-          (rain ? '<div style="font-size:0.65rem;">🌧️</div>' : '') +
+          (d.rain ? '<div style="font-size:0.65rem;">🌧️</div>' : '') +
           '</div>';
-      }
+      });
       forecastHTML += '</div>';
       forecastEl.innerHTML = forecastHTML;
     }
     if (state.settings.location_name !== (name + ', ' + admin1)) {
       await api('/api/settings', 'PUT', { key: 'location_name', value: name + ', ' + admin1 });
     }
+
+    // Auto log today's weather
+    const today = new Date().toISOString().split('T')[0];
+    await api('/api/weather', 'POST', {
+      log_date: today,
+      high_temp_f: c.main.temp_max,
+      low_temp_f: c.main.temp_min,
+      precip_inches: c.rain ? (c.rain['1h'] || 0) / 25.4 : 0,
+      condition: c.weather[0]?.description || '',
+      wind_speed_mph: Math.round(c.wind.speed),
+      source: 'auto'
+    });
   } catch (err) { if (weatherEl) weatherEl.textContent = 'Weather unavailable'; }
 }
 
@@ -533,7 +556,7 @@ function renderDashboard() {
       }
       return '';
     })()}
-    ${state.settings.zip_code ? `
+    ${state.settings.zip_code && state.settings.openweather_api_key ? `
     <div id="weather-widget" class="card" style="padding:12px 16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div>
@@ -3300,6 +3323,205 @@ async function deleteProject(code) {
   await api('/api/projects/' + code, 'DELETE'); await loadAll(); render();
 }
 
+function renderWeather() {
+  const currentYear = new Date().getFullYear();
+  const thisYearLog = state.weatherLog.filter(w => w.log_date && w.log_date.startsWith(currentYear.toString()));
+  const avgHigh = thisYearLog.length > 0 ? Math.round(thisYearLog.reduce((s,w) => s + parseFloat(w.high_temp_f || 0), 0) / thisYearLog.length) : null;
+  const avgLow = thisYearLog.length > 0 ? Math.round(thisYearLog.reduce((s,w) => s + parseFloat(w.low_temp_f || 0), 0) / thisYearLog.length) : null;
+  const totalPrecip = thisYearLog.reduce((s,w) => s + parseFloat(w.precip_inches || 0), 0).toFixed(2);
+  const frostDays = thisYearLog.filter(w => parseFloat(w.low_temp_f) <= 32).length;
+
+  // Calculate personal frost averages
+  const lastSpringFrosts = state.frostEvents.filter(f => f.event_type === 'last_spring' && f.confirmed);
+  const firstFallFrosts = state.frostEvents.filter(f => f.event_type === 'first_fall' && f.confirmed);
+
+  const avgLastFrost = lastSpringFrosts.length >= 2 ? (() => {
+    const avgDoy = Math.round(lastSpringFrosts.reduce((s,f) => {
+      const d = new Date(f.event_date);
+      const start = new Date(d.getFullYear(), 0, 0);
+      return s + Math.floor((d - start) / 86400000);
+    }, 0) / lastSpringFrosts.length);
+    const date = new Date(currentYear, 0, avgDoy);
+    return date.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  })() : null;
+
+  const avgFirstFrost = firstFallFrosts.length >= 2 ? (() => {
+    const avgDoy = Math.round(firstFallFrosts.reduce((s,f) => {
+      const d = new Date(f.event_date);
+      const start = new Date(d.getFullYear(), 0, 0);
+      return s + Math.floor((d - start) / 86400000);
+    }, 0) / firstFallFrosts.length);
+    const date = new Date(currentYear, 0, avgDoy);
+    return date.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  })() : null;
+
+  return `
+    <div class="page-header">
+      <h1 class="page-title">🌤️ Weather History</h1>
+      <button class="btn btn-primary" onclick="showLogWeather()">+ Log Weather</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;">
+      <div class="stat-card" style="cursor:default;"><div class="stat-number">${thisYearLog.length}</div><div class="stat-label">Days Logged ${currentYear}</div></div>
+      <div class="stat-card" style="cursor:default;"><div class="stat-number">${avgHigh !== null ? avgHigh + '°' : '—'}</div><div class="stat-label">Avg High ${currentYear}</div></div>
+      <div class="stat-card" style="cursor:default;"><div class="stat-number">${totalPrecip}"</div><div class="stat-label">Total Rain ${currentYear}</div></div>
+      <div class="stat-card" style="cursor:default;"><div class="stat-number">${frostDays}</div><div class="stat-label">Frost Days ${currentYear}</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+      <div class="card">
+        <div class="card-title">❄️ Frost History</div>
+        ${state.frostEvents.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No frost events recorded yet. Mark actual frost dates to build your personal average.</p>' : ''}
+        ${avgLastFrost ? `<div style="margin-bottom:12px;padding:10px;background:var(--green-bg);border-radius:6px;">
+          <div style="font-size:0.85rem;color:var(--text-muted);">Your personal last spring frost average</div>
+          <div style="font-size:1.2rem;font-weight:700;color:var(--green-mid);">${avgLastFrost}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">Based on ${lastSpringFrosts.length} years of data</div>
+        </div>` : '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Need 2+ years of data for personal average.</p>'}
+        ${avgFirstFrost ? `<div style="margin-bottom:12px;padding:10px;background:var(--green-bg);border-radius:6px;">
+          <div style="font-size:0.85rem;color:var(--text-muted);">Your personal first fall frost average</div>
+          <div style="font-size:1.2rem;font-weight:700;color:#f59e0b;">${avgFirstFrost}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">Based on ${firstFallFrosts.length} years of data</div>
+        </div>` : ''}
+        <div style="margin-top:12px;">
+          <div style="font-weight:700;margin-bottom:8px;font-size:0.85rem;">Recorded Frost Events</div>
+          ${state.frostEvents.map(f => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;font-size:0.85rem;">
+              <span>${f.year} — ${f.event_type === 'last_spring' ? '🌱 Last Spring Frost' : '❄️ First Fall Frost'}</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-weight:600;">${new Date(f.event_date).toLocaleDateString('en-US', {month:'short', day:'numeric'})}</span>
+                ${f.confirmed ? '<span style="color:#22c55e;font-size:0.75rem;">✅ Confirmed</span>' : '<span style="color:#f59e0b;font-size:0.75rem;">Estimated</span>'}
+              </div>
+            </div>
+          `).join('')}
+          <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="showLogFrostEvent()">+ Record Frost Event</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">📊 Recent Weather Log</div>
+        ${state.weatherLog.slice(0, 10).map(w => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;font-size:0.82rem;">
+            <div>
+              <span style="font-weight:600;">${new Date(w.log_date).toLocaleDateString('en-US', {month:'short', day:'numeric'})}</span>
+              <span style="color:var(--text-muted);margin-left:6px;">${w.condition || ''}</span>
+              ${w.source === 'manual' ? '<span style="color:var(--green-mid);font-size:0.72rem;margin-left:4px;">✏️</span>' : ''}
+            </div>
+            <div style="display:flex;gap:8px;color:var(--text-muted);">
+              ${w.high_temp_f ? `<span>↑${Math.round(w.high_temp_f)}°</span>` : ''}
+              ${w.low_temp_f ? `<span>↓${Math.round(w.low_temp_f)}°</span>` : ''}
+              ${w.precip_inches > 0 ? `<span>🌧️${w.precip_inches}"</span>` : ''}
+            </div>
+          </div>
+        `).join('')}
+        ${state.weatherLog.length === 0 ? '<p style="color:var(--text-muted);font-size:0.85rem;">No weather logged yet. Open the dashboard to auto-log today\'s weather.</p>' : ''}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📈 Year Comparison</div>
+      ${(() => {
+        const years = [...new Set(state.weatherLog.map(w => w.log_date?.substring(0,4)))].filter(Boolean).sort((a,b) => b-a).slice(0,3);
+        if (years.length < 2) return '<p style="color:var(--text-muted);font-size:0.85rem;">Need data from multiple years for comparison. Keep using SeedVault and this will fill in automatically.</p>';
+        return '<div class="table-wrap"><table><thead><tr><th>Year</th><th>Days Logged</th><th>Avg High</th><th>Avg Low</th><th>Total Rain</th><th>Frost Days</th><th>Last Spring Frost</th><th>First Fall Frost</th></tr></thead><tbody>' +
+          years.map(year => {
+            const yLog = state.weatherLog.filter(w => w.log_date?.startsWith(year));
+            const yAvgHigh = yLog.length > 0 ? Math.round(yLog.reduce((s,w) => s + parseFloat(w.high_temp_f||0), 0) / yLog.length) : null;
+            const yAvgLow = yLog.length > 0 ? Math.round(yLog.reduce((s,w) => s + parseFloat(w.low_temp_f||0), 0) / yLog.length) : null;
+            const yPrecip = yLog.reduce((s,w) => s + parseFloat(w.precip_inches||0), 0).toFixed(2);
+            const yFrost = yLog.filter(w => parseFloat(w.low_temp_f) <= 32).length;
+            const yLastSpring = state.frostEvents.find(f => f.year == year && f.event_type === 'last_spring');
+            const yFirstFall = state.frostEvents.find(f => f.year == year && f.event_type === 'first_fall');
+            return '<tr><td><strong>' + year + '</strong></td><td>' + yLog.length + '</td><td>' + (yAvgHigh !== null ? yAvgHigh + '°F' : '—') + '</td><td>' + (yAvgLow !== null ? yAvgLow + '°F' : '—') + '</td><td>' + yPrecip + '"</td><td>' + yFrost + '</td><td>' + (yLastSpring ? new Date(yLastSpring.event_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—') + '</td><td>' + (yFirstFall ? new Date(yFirstFall.event_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—') + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
+      })()}
+    </div>
+  `;
+}
+
+function showLogWeather() {
+  openModal('Log Weather', `
+    <div class="alert alert-info">Weather is auto-logged daily from Open-Meteo. Use this to add manual observations or corrections.</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date *</label><input class="form-control" id="f-wdate" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group"><label class="form-label">Condition</label><input class="form-control" id="f-wcond" placeholder="e.g. Sunny, Rainy, Overcast"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">High Temp (°F)</label><input class="form-control" id="f-whigh" type="number" step="0.1"></div>
+      <div class="form-group"><label class="form-label">Low Temp (°F)</label><input class="form-control" id="f-wlow" type="number" step="0.1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Precipitation (inches)</label><input class="form-control" id="f-wprecip" type="number" step="0.01"></div>
+      <div class="form-group"><label class="form-label">Wind Speed (mph)</label><input class="form-control" id="f-wwind" type="number" step="0.1"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-wnotes" rows="2" placeholder="Hail, severe weather, notable events..."></textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitWeatherLog()">Log Weather</button>
+    </div>
+  `);
+}
+
+function showLogFrostEvent() {
+  const currentYear = new Date().getFullYear();
+  openModal('Record Frost Event', `
+    <div class="alert alert-info">Record actual frost dates to build your personal frost date average over time.</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Year *</label><input class="form-control" id="f-fyear" type="number" value="${currentYear}"></div>
+      <div class="form-group"><label class="form-label">Event Type *</label>
+        <select class="form-control" id="f-ftype">
+          <option value="last_spring">🌱 Last Spring Frost</option>
+          <option value="first_fall">❄️ First Fall Frost</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date *</label><input class="form-control" id="f-fdate" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group"><label class="form-label">Confirmed?</label>
+        <select class="form-control" id="f-fconfirmed">
+          <option value="true">✅ Yes — actual frost observed</option>
+          <option value="false">Estimated</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-fnotes" rows="2" placeholder="Temperature, damage observed, source..."></textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitFrostEvent()">Record Event</button>
+    </div>
+  `);
+}
+
+async function submitWeatherLog() {
+  const log_date = document.getElementById('f-wdate').value;
+  if (!log_date) return alert('Date is required');
+  await api('/api/weather', 'POST', {
+    log_date,
+    high_temp_f: document.getElementById('f-whigh').value || null,
+    low_temp_f: document.getElementById('f-wlow').value || null,
+    precip_inches: document.getElementById('f-wprecip').value || null,
+    wind_speed_mph: document.getElementById('f-wwind').value || null,
+    condition: document.getElementById('f-wcond').value,
+    notes: document.getElementById('f-wnotes').value,
+    source: 'manual'
+  });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitFrostEvent() {
+  const year = document.getElementById('f-fyear').value;
+  const event_type = document.getElementById('f-ftype').value;
+  const event_date = document.getElementById('f-fdate').value;
+  if (!year || !event_type || !event_date) return alert('Year, type and date are required');
+  await api('/api/frost-events', 'POST', {
+    year: parseInt(year),
+    event_type,
+    event_date,
+    confirmed: document.getElementById('f-fconfirmed').value === 'true',
+    notes: document.getElementById('f-fnotes').value
+  });
+  closeModal(); await loadAll(); render();
+  alert('✅ Frost event recorded! If confirmed, your frost date settings have been updated.');
+}
+
 function renderSettings() {
   const isAdmin = getRole() === 'admin';
   const isDark = getTheme() === 'dark';
@@ -3353,10 +3575,20 @@ function renderSettings() {
     <div class="card">
       <div class="settings-section-title">🌡️ Garden Location & Frost Dates</div>
       <div class="settings-row">
-        <div class="settings-row-info"><h4>Zip Code</h4><p>Used for local weather on the dashboard.</p></div>
+        <div class="settings-row-info"><h4>Zip Code</h4><p>Your zip code for weather and planting calculations.</p></div>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-control" id="s-zipcode" style="width:100px;" value="${state.settings.zip_code || ''}" placeholder="e.g. 26301">
           <button class="btn btn-secondary" onclick="saveSetting('zip_code', document.getElementById('s-zipcode').value)">Save</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <h4>OpenWeatherMap API Key</h4>
+          <p>Optional — enables accurate live weather on dashboard. Free at <a href="https://openweathermap.org/api" target="_blank" style="color:var(--green-mid);">openweathermap.org</a>. Without this, weather widget is hidden.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-control" id="s-owmkey" style="width:220px;" value="${state.settings.openweather_api_key || ''}" placeholder="Paste API key here" type="password">
+          <button class="btn btn-secondary" onclick="saveSetting('openweather_api_key', document.getElementById('s-owmkey').value)">Save</button>
         </div>
       </div>
       <div class="settings-row">
