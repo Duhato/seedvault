@@ -3224,13 +3224,21 @@ async function handleImportFile(e) {
     const preview = await api('/api/backup/preview', 'POST', backup);
     const backupData = backup;
     openModal('Import Backup — Preview', `
-      <div class="alert alert-warn">⚠️ Existing records will be skipped.</div>
+      <div class="alert alert-warn">⚠️ Existing records will be skipped. New records will be added.</div>
       <div style="background:var(--green-bg);border-radius:8px;padding:16px;margin-bottom:16px;">
         <table style="width:100%;font-size:0.9rem;">
+          <tr><td style="padding:4px 0;"><strong>Species</strong></td><td>${preview.species || 0}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Varieties</strong></td><td>${preview.varieties}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Seed Lots</strong></td><td>${preview.seed_lots}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Garden Locations</strong></td><td>${preview.garden_locations || 0}</td></tr>
           <tr><td style="padding:4px 0;"><strong>Plants</strong></td><td>${preview.plants}</td></tr>
-          <tr><td style="padding:4px 0;"><strong>Projects</strong></td><td>${preview.breeding_projects}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Breeding Projects</strong></td><td>${preview.breeding_projects}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Harvest Records</strong></td><td>${preview.harvest_log || 0}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Germination Tests</strong></td><td>${preview.germination_tests || 0}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Amendments</strong></td><td>${preview.plant_amendments || 0}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Cross Pollinations</strong></td><td>${preview.cross_pollinations || 0}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Observations</strong></td><td>${preview.fruit_observations || 0}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Seed Sources</strong></td><td>${preview.seed_sources || 0}</td></tr>
         </table>
       </div>
       <div class="form-actions">
