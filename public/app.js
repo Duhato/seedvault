@@ -3584,7 +3584,7 @@ function renderSettings() {
       <div class="settings-row">
         <div class="settings-row-info">
           <h4>OpenWeatherMap API Key</h4>
-          <p>Optional — enables accurate live weather on dashboard. Free at <a href="https://openweathermap.org/api" target="_blank" style="color:var(--green-mid);">openweathermap.org</a>. Without this, weather widget is hidden.</p>
+          <p>Optional — enables accurate live weather on dashboard. Free at <a href="https://openweathermap.org/api" target="_blank" style="color:var(--green-mid);">openweathermap.org</a>. Without this, weather widget is hidden.<br><span style="color:#f59e0b;font-size:0.8rem;">⚠️ New API keys take up to 2 hours to activate after creation.</span></p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-control" id="s-owmkey" style="width:220px;" value="${state.settings.openweather_api_key || ''}" placeholder="Paste API key here" type="password">
