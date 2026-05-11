@@ -4629,7 +4629,7 @@ async function exportBackup() {
 
 async function recordBackupDate() {
   try {
-    await api('/api/settings', 'POST', { key: 'last_backup_date', value: new Date().toISOString().split('T')[0] });
+    await api('/api/settings', 'PUT', { key: 'last_backup_date', value: new Date().toISOString().split('T')[0] });
     state.settings.last_backup_date = new Date().toISOString().split('T')[0];
     render();
   } catch(e) { console.warn('Could not record backup date', e); }
