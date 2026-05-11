@@ -4108,8 +4108,7 @@ function renderSettings() {
         <button class="btn btn-danger" onclick="logout()">⏏️ Sign Out</button>
       </div>
       <div class="settings-row">
-        <div class="settings-row-info"><h4>Install App</h4><p>Add SeedVault to your home screen for quick access.</p></div>
-        <button class="btn btn-secondary" onclick="installPWA()">📱 Install</button>
+
       </div>
     </div>
     <div class="card">
