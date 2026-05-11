@@ -2001,7 +2001,11 @@ function seedLotForm(lot) {
     <div class="form-group"><label class="form-label">Mother Plant Designation</label><input class="form-control" id="f-mother" value="${lot ? lot.mother_designation || '' : ''}"></div>
     <div class="form-group"><label class="form-label">Father Plant Designation</label><input class="form-control" id="f-father" value="${lot ? lot.father_designation || '' : ''}"></div>
 
-    <div style="font-weight:700;margin:12px 0 8px;font-size:0.9rem;">🌱 Growing Information</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px;">
+      <div style="font-weight:700;font-size:0.9rem;">🌱 Growing Information</div>
+      ${state.settings.ai_provider ? '<button type="button" class="btn btn-secondary btn-sm" onclick="lookupGrowingInfo(this)" data-designation="' + (lot ? lot.designation : '') + '" data-variety="' + (lot ? (lot.variety_name || lot.variety_code) : '') + '">✨ Lookup Info</button>' : ''}
+    </div>
+    <div id="ai-growing-preview" style="display:none;background:var(--green-bg);border-radius:8px;padding:12px;margin-bottom:12px;font-size:0.85rem;"></div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Days to Germination</label><input class="form-control" id="f-dtg" placeholder="e.g. 7-14 or 10" value="${lot ? lot.days_to_germination || '' : ''}"></div>
       <div class="form-group"><label class="form-label">Days to Harvest</label><input class="form-control" id="f-dth" placeholder="e.g. 60-70 or 67" value="${lot ? lot.days_to_harvest || '' : ''}"></div>
@@ -4224,6 +4228,42 @@ function renderSettings() {
       </div>
     </div>
     <div class="card">
+      <div class="settings-section-title">🤖 AI Assistant</div>
+      <div class="settings-row">
+        <div class="settings-row-info">
+          <h4>AI Provider</h4>
+          <p>Connect an AI provider to enable growing info lookup, companion suggestions, pest identification, and season planning. Your key is stored locally and never shared.</p>
+        </div>
+      </div>
+      <div style="padding:0 0 16px 0;">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Provider</label>
+            <select class="form-control" id="ai-provider" onchange="toggleAIKeyField()">
+              <option value="">— Disabled —</option>
+              <option value="gemini" ${state.settings.ai_provider === 'gemini' ? 'selected' : ''}>Google Gemini</option>
+              <option value="openai" ${state.settings.ai_provider === 'openai' ? 'selected' : ''}>OpenAI ChatGPT</option>
+              <option value="claude" ${state.settings.ai_provider === 'claude' ? 'selected' : ''}>Anthropic Claude</option>
+              <option value="ollama" ${state.settings.ai_provider === 'ollama' ? 'selected' : ''}>Ollama (Local)</option>
+            </select>
+          </div>
+          <div class="form-group" id="ai-key-group">
+            <label class="form-label" id="ai-key-label">API Key</label>
+            <input class="form-control" id="ai-key" type="password" placeholder="Paste your API key here" value="${state.settings.ai_api_key ? '••••••••••••••••' : ''}">
+          </div>
+        </div>
+        <div class="form-group hidden" id="ai-ollama-group">
+          <label class="form-label">Ollama URL</label>
+          <input class="form-control" id="ai-ollama-url" type="text" placeholder="http://localhost:11434" value="${state.settings.ai_ollama_url || ''}">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-secondary" onclick="testAIConnection()">🔌 Test Connection</button>
+          <button class="btn btn-primary" onclick="saveAISettings()">💾 Save AI Settings</button>
+          ${state.settings.ai_provider ? '<button class="btn btn-danger btn-sm" onclick="removeAISettings()">Remove</button>' : ''}
+        </div>
+        ${state.settings.ai_provider ? '<div style="margin-top:8px;font-size:0.82rem;color:var(--green-mid);">✅ AI Assistant active — using ' + (state.settings.ai_provider === 'gemini' ? 'Google Gemini' : state.settings.ai_provider === 'openai' ? 'OpenAI ChatGPT' : state.settings.ai_provider === 'claude' ? 'Anthropic Claude' : 'Ollama (Local)') + '</div>' : ''}
+      </div>
+
       <div class="settings-section-title">📊 Reports</div>
       <div class="settings-row">
         <div class="settings-row-info"><h4>Seed Inventory Report</h4><p>Print a full inventory of all your seed lots with quantities and viability.</p></div>
@@ -4239,6 +4279,204 @@ function renderSettings() {
       </div>
     </div>
   `;
+}
+
+async function lookupGrowingInfo(btn) {
+  const variety = btn.getAttribute('data-variety');
+  const preview = document.getElementById('ai-growing-preview');
+  if (!preview) return;
+
+  btn.textContent = '⏳ Looking up...';
+  btn.disabled = true;
+  preview.style.display = 'none';
+
+  const prompt = 'Give me growing information for ' + variety + '. Respond with JSON only, no markdown, no explanation. Use exactly this structure: {"days_to_germination":"7-14","days_to_harvest":"50-70","planting_depth":"1/2 in","plant_spacing":"12 in","row_spacing":"36-60 in","min_soil_temp":"60","sun":"Full Sun","water":"Medium","frost_tolerance":"Tender — no frost","notes":"Brief growing tip"}. For sun use one of: Full Sun, Partial Sun, Partial Shade, Full Shade. For water use: Low, Medium, High. Keep values concise.';
+
+  try {
+    const result = await api('/api/ai/query', 'POST', { prompt });
+    if (!result.response) throw new Error('No response');
+
+    let data;
+    try {
+      const clean = result.response.replace(/```json|```/g, '').trim();
+      data = JSON.parse(clean);
+    } catch(e) { throw new Error('Could not parse AI response'); }
+
+    // Show preview
+    const fields = [
+      ['Days to Germination', data.days_to_germination, 'f-dtg'],
+      ['Days to Harvest', data.days_to_harvest, 'f-dth'],
+      ['Planting Depth', data.planting_depth, 'f-depth'],
+      ['Plant Spacing', data.plant_spacing, 'f-spacing'],
+      ['Row Spacing', data.row_spacing, 'f-rowspacing'],
+      ['Min Soil Temp', data.min_soil_temp, 'f-soiltemp'],
+      ['Sun', data.sun, 'f-sun'],
+      ['Water', data.water, 'f-water'],
+      ['Frost Tolerance', data.frost_tolerance, 'f-frost'],
+    ];
+
+    const emptyFields = fields.filter(function(f) {
+      const el = document.getElementById(f[2]);
+      return el && !el.value && f[1];
+    });
+
+    if (emptyFields.length === 0) {
+      preview.style.display = 'block';
+      preview.innerHTML = '<div style="color:var(--green-mid);">✅ All growing info fields are already filled in.</div>';
+      btn.textContent = '✨ Lookup Info';
+      btn.disabled = false;
+      return;
+    }
+
+    let previewHtml = '<div style="font-weight:600;margin-bottom:8px;">✨ AI found the following — click Apply to fill in empty fields only:</div>';
+    previewHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-bottom:10px;">';
+    emptyFields.forEach(function(f) {
+      previewHtml += '<div style="font-size:0.8rem;"><span style="color:var(--text-muted);">' + f[0] + ':</span> <strong>' + f[1] + '</strong></div>';
+    });
+    previewHtml += '</div>';
+    if (data.notes) previewHtml += '<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">💡 ' + data.notes + '</div>';
+    window._aiGrowingData = data;
+    previewHtml += '<div style="display:flex;gap:8px;">'
+      + '<button class="btn btn-primary btn-sm" onclick="applyGrowingInfo()">✅ Apply to Empty Fields</button>'
+      + '<button class="btn btn-secondary btn-sm" onclick="document.getElementById(&quot;ai-growing-preview&quot;).style.display=&quot;none&quot;">Dismiss</button>'
+      + '</div>';
+
+    preview.innerHTML = previewHtml;
+    preview.style.display = 'block';
+
+  } catch(err) {
+    preview.style.display = 'block';
+    preview.innerHTML = '<div style="color:#ef4444;">❌ Lookup failed: ' + err.message + '</div>';
+  }
+
+  btn.textContent = '✨ Lookup Info';
+  btn.disabled = false;
+}
+
+function applyGrowingInfo() {
+  var data = window._aiGrowingData;
+  if (!data) return;
+  const fieldMap = {
+    'f-dtg': data.days_to_germination,
+    'f-dth': data.days_to_harvest,
+    'f-depth': data.planting_depth,
+    'f-spacing': data.plant_spacing,
+    'f-rowspacing': data.row_spacing,
+    'f-soiltemp': data.min_soil_temp,
+  };
+  Object.keys(fieldMap).forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el && !el.value && fieldMap[id]) el.value = fieldMap[id];
+  });
+  // Handle dropdowns
+  ['f-sun', 'f-water', 'f-frost'].forEach(function(id) {
+    const el = document.getElementById(id);
+    const val = id === 'f-sun' ? data.sun : id === 'f-water' ? data.water : data.frost_tolerance;
+    if (el && !el.value && val) {
+      for (let i = 0; i < el.options.length; i++) {
+        if (el.options[i].value === val || el.options[i].text === val) {
+          el.value = el.options[i].value;
+          break;
+        }
+      }
+    }
+  });
+  document.getElementById('ai-growing-preview').style.display = 'none';
+}
+
+function toggleAIKeyField() {
+  const provider = document.getElementById('ai-provider').value;
+  const keyGroup = document.getElementById('ai-key-group');
+  const ollamaGroup = document.getElementById('ai-ollama-group');
+  const keyLabel = document.getElementById('ai-key-label');
+  if (provider === 'ollama') {
+    keyGroup.classList.add('hidden');
+    ollamaGroup.classList.remove('hidden');
+  } else if (provider === '') {
+    keyGroup.classList.add('hidden');
+    ollamaGroup.classList.add('hidden');
+  } else {
+    keyGroup.classList.remove('hidden');
+    ollamaGroup.classList.add('hidden');
+    keyLabel.textContent = provider === 'gemini' ? 'Gemini API Key' : provider === 'openai' ? 'OpenAI API Key' : 'Anthropic API Key';
+  }
+}
+
+async function saveAISettings() {
+  const provider = document.getElementById('ai-provider').value;
+  const key = document.getElementById('ai-key').value;
+  const ollamaUrl = document.getElementById('ai-ollama-url')?.value || '';
+
+  if (!provider) {
+    await removeAISettings();
+    return;
+  }
+  if (provider !== 'ollama' && (!key || key === '••••••••••••••••')) {
+    alert('Please enter your API key');
+    return;
+  }
+
+  await api('/api/settings', 'PUT', { key: 'ai_provider', value: provider });
+  if (provider === 'ollama') {
+    await api('/api/settings', 'PUT', { key: 'ai_ollama_url', value: ollamaUrl || 'http://localhost:11434' });
+  } else if (key && key !== '••••••••••••••••') {
+    await api('/api/settings', 'PUT', { key: 'ai_api_key', value: key });
+  }
+  await loadAll();
+  render();
+  alert('✅ AI settings saved!');
+}
+
+async function removeAISettings() {
+  await api('/api/settings', 'PUT', { key: 'ai_provider', value: '' });
+  await api('/api/settings', 'PUT', { key: 'ai_api_key', value: '' });
+  await loadAll();
+  render();
+}
+
+async function testAIConnection() {
+  const provider = document.getElementById('ai-provider').value;
+  const key = document.getElementById('ai-key').value;
+  const ollamaUrl = document.getElementById('ai-ollama-url')?.value || '';
+
+  if (!provider) { alert('Please select a provider first'); return; }
+  if (provider !== 'ollama' && (!key || key === '••••••••••••••••')) {
+    alert('Please enter your API key first'); return;
+  }
+
+  const btn = event.target;
+  btn.textContent = 'Testing...';
+  btn.disabled = true;
+
+  try {
+    const result = await api('/api/ai/test', 'POST', {
+      provider,
+      key: key === '••••••••••••••••' ? null : key,
+      ollamaUrl
+    });
+    if (result.success) {
+      alert('✅ Connection successful! AI Assistant is ready.');
+    } else {
+      alert('❌ Connection failed: ' + (result.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('❌ Connection failed: ' + err.message);
+  } finally {
+    btn.textContent = '🔌 Test Connection';
+    btn.disabled = false;
+  }
+}
+
+// Main AI query function — used by all AI features
+async function queryAI(prompt) {
+  if (!state.settings.ai_provider) return null;
+  try {
+    const result = await api('/api/ai/query', 'POST', { prompt });
+    if (result.error) return null;
+    return result.response;
+  } catch (err) {
+    return null;
+  }
 }
 
 function printSeasonComparisonReport() {

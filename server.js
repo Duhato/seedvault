@@ -1093,6 +1093,89 @@ app.get('/api/viability', authMiddleware, async (req, res) => {
 });
 
 // BACKUP
+app.post('/api/ai/test', authMiddleware, async (req, res) => {
+  const { provider, key, ollamaUrl } = req.body;
+  try {
+    const response = await testAIProvider(provider, key, ollamaUrl);
+    res.json({ success: true, response });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/ai/query', authMiddleware, async (req, res) => {
+  const { prompt } = req.body;
+  try {
+    const settings = await getAISettings(req.user.id);
+    if (!settings.provider) return res.json({ error: 'No AI provider configured' });
+    const response = await queryAIProvider(settings.provider, settings.key, settings.ollamaUrl, prompt);
+    res.json({ response });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function getAISettings(userId) {
+  const results = await pool.query('SELECT key, value FROM user_settings WHERE key IN ($1, $2, $3)', ['ai_provider', 'ai_api_key', 'ai_ollama_url']);
+  const s = {};
+  results.rows.forEach(r => { s[r.key] = r.value; });
+  return { provider: s.ai_provider || '', key: s.ai_api_key || '', ollamaUrl: s.ai_ollama_url || 'http://localhost:11434' };
+}
+
+async function testAIProvider(provider, key, ollamaUrl) {
+  return await queryAIProvider(provider, key, ollamaUrl, 'Say "SeedVault AI ready" and nothing else.');
+}
+
+async function queryAIProvider(provider, key, ollamaUrl, prompt) {
+  const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+
+  if (provider === 'gemini') {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=' + key, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error.message);
+    return d.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  }
+
+  if (provider === 'openai') {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], max_tokens: 1000 })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error.message);
+    return d.choices?.[0]?.message?.content || '';
+  }
+
+  if (provider === 'claude') {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error.message || JSON.stringify(d.error));
+    return d.content?.[0]?.text || '';
+  }
+
+  if (provider === 'ollama') {
+    const url = (ollamaUrl || 'http://localhost:11434').replace(/\/$/, '');
+    const r = await fetch(url + '/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'llama3', prompt, stream: false })
+    });
+    const d = await r.json();
+    return d.response || '';
+  }
+
+  throw new Error('Unknown provider: ' + provider);
+}
+
 app.get('/api/companions', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM companion_plants ORDER BY species_code');
