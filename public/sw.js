@@ -1,4 +1,4 @@
-const CACHE_NAME = 'seedvault-v1';
+const CACHE_NAME = 'seedvault-v2';
 const ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', e => {
