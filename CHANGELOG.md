@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to SeedVault will be documented here.
 
+## [1.2.2] - 2026-05-10
+### Added
+- Companion cards expand on click showing how to plant, distance, and timing details
+- Extended companion data for all vegetables, flowers, and herbs — marigolds, nasturtiums, borage, sunflowers, chamomile, zinnias, calendula, basil, dill, cilantro, parsley, chives, rosemary, sage, thyme, mint
+- Backup reminder banner on dashboard — orange if never backed up, yellow after 7 days, red after 14 days
+- Last backup date tracked automatically on every ZIP or JSON export
+- Portable one-line Docker install — single curl command pulls and starts everything
+- Fixed docker-compose.yml to use named volumes and Docker Hub image
+
 ## [1.2.1] - 2026-05-10
 ### Added
 - Backup reminder banner on dashboard — orange if never backed up, yellow after 7 days, red after 14 days, click to go straight to backup

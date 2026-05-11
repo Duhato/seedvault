@@ -166,7 +166,13 @@ Set your zip code and optionally an OpenWeatherMap API key in Settings. Weather 
 
 ## Companion Planting
 
-Click 🌿 Companions on any seed lot to see good neighbors and plants to avoid. Built-in data covers cucumbers, tomatoes, peppers, carrots, beans, lettuce, squash, corn, spinach, melons, onions, peas, and herbs. For any other crop click **+ Add Companion Data** to add your own — stored in your database and included in backups.
+Click 🌿 Companions on any seed lot to see good neighbors and plants to avoid. Built-in data covers:
+
+- **Vegetables** — cucumbers, tomatoes, peppers, carrots, beans, lettuce, squash, corn, spinach, melons, onions, peas
+- **Flowers** — marigolds, nasturtiums, borage, sunflowers, chamomile, zinnias, calendula
+- **Herbs** — basil, dill, cilantro, parsley, chives, rosemary, sage, thyme, mint
+
+Click any companion card to expand it and see how to plant the pairing, recommended spacing, and timing. For any crop not in the built-in list click **+ Add Companion Data** to add your own — stored in your database, included in backups, and editable any time.
 
 ## Backup & Restore
 
