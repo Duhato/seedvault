@@ -94,6 +94,22 @@ async function submitSetup() {
 function logout() { clearToken(); showLogin(); }
 
 // ==================== STATE ====================
+const BUILTIN_COMPANIONS = {
+  'CUC': { good: [{name:'Beans',icon:'🫘',reason:'Fix nitrogen, improve soil fertility'},{name:'Corn',icon:'🌽',reason:'Provides shade, reduces moisture loss'},{name:'Dill',icon:'🌿',reason:'Repels aphids and spider mites'},{name:'Nasturtiums',icon:'🌸',reason:'Trap crop for aphids, repel squash bugs'},{name:'Radishes',icon:'🌱',reason:'Deter cucumber beetles'},{name:'Sunflowers',icon:'🌻',reason:'Attract pollinators, provide light shade'}], bad: [{name:'Sage',icon:'🌿',reason:'Inhibits cucumber growth'},{name:'Potatoes',icon:'🥔',reason:'Compete for nutrients, share blight'},{name:'Melons',icon:'🍈',reason:'Compete for space and nutrients'}], tips: 'Cucumbers love warmth and consistent moisture. Plant after last frost when soil reaches 60°F. Trellis vertically to save space and improve air circulation.' },
+  'TOM': { good: [{name:'Basil',icon:'🌿',reason:'Repels aphids, improves flavor'},{name:'Carrots',icon:'🥕',reason:'Loosen soil around roots'},{name:'Marigolds',icon:'🌼',reason:'Repel nematodes and whiteflies'},{name:'Parsley',icon:'🌱',reason:'Attracts beneficial insects'},{name:'Borage',icon:'🌸',reason:'Repels tomato hornworm'},{name:'Garlic',icon:'🧄',reason:'Deters spider mites and aphids'}], bad: [{name:'Fennel',icon:'🌿',reason:'Inhibits tomato growth'},{name:'Brassicas',icon:'🥦',reason:'Compete for nutrients'},{name:'Corn',icon:'🌽',reason:'Both attract tomato fruitworm/corn earworm'}], tips: 'Tomatoes are heavy feeders. Rotate beds every year to prevent disease buildup. Remove suckers for indeterminate varieties to focus energy on fruit.' },
+  'PEP': { good: [{name:'Basil',icon:'🌿',reason:'Repels aphids, may improve flavor'},{name:'Carrots',icon:'🥕',reason:'Loosen soil, compatible root depth'},{name:'Tomatoes',icon:'🍅',reason:'Similar needs, good neighbors'},{name:'Marigolds',icon:'🌼',reason:'Deter aphids and nematodes'},{name:'Spinach',icon:'🥬',reason:'Ground cover, retains moisture'}], bad: [{name:'Fennel',icon:'🌿',reason:'Allelopathic, inhibits growth'},{name:'Apricots',icon:'🍑',reason:'Share verticillium wilt'}], tips: 'Peppers love heat and full sun. Begin indoors 8-10 weeks before last frost. Keep soil consistently moist for best fruit set.' },
+  'CAR': { good: [{name:'Tomatoes',icon:'🍅',reason:'Tomatoes shade soil, carrots loosen it'},{name:'Lettuce',icon:'🥬',reason:'Shallow roots, no competition'},{name:'Onions',icon:'🧅',reason:'Deter carrot fly'},{name:'Sage',icon:'🌿',reason:'Repels carrot fly'},{name:'Rosemary',icon:'🌿',reason:'Deters carrot fly'},{name:'Chives',icon:'🌱',reason:'Improve flavor, deter aphids'}], bad: [{name:'Dill',icon:'🌿',reason:'Cross-pollinates, inhibits growth'},{name:'Parsnips',icon:'🌱',reason:'Compete for same nutrients and space'},{name:'Fennel',icon:'🌿',reason:'Allelopathic to most vegetables'}], tips: 'Carrots need deep, loose, rock-free soil. Thin seedlings early — crowded carrots fork badly. Sow in early spring or fall for best flavor.' },
+  'BEAN': { good: [{name:'Corn',icon:'🌽',reason:'Classic Three Sisters — beans fix nitrogen for corn'},{name:'Squash',icon:'🎃',reason:'Three Sisters — squash shades ground'},{name:'Cucumbers',icon:'🥒',reason:'Beans fix nitrogen cucumbers need'},{name:'Carrots',icon:'🥕',reason:'Different root depths, no competition'},{name:'Marigolds',icon:'🌼',reason:'Deter Mexican bean beetles'}], bad: [{name:'Onions',icon:'🧅',reason:'Inhibit bean growth'},{name:'Garlic',icon:'🧄',reason:'Inhibit bean growth'},{name:'Fennel',icon:'🌿',reason:'Allelopathic to beans'}], tips: 'Beans fix atmospheric nitrogen — great before heavy feeders. Do not over-fertilize with nitrogen or you get leaves, not pods. Direct sow after last frost.' },
+  'LETT': { good: [{name:'Carrots',icon:'🥕',reason:'Different depths, great neighbors'},{name:'Radishes',icon:'🌱',reason:'Break soil, mark slow lettuce rows'},{name:'Strawberries',icon:'🍓',reason:'Ground cover, mutual benefit'},{name:'Chives',icon:'🌱',reason:'Deter aphids'},{name:'Tall flowers',icon:'🌸',reason:'Provide shade in summer heat'}], bad: [{name:'Celery',icon:'🌿',reason:'Compete aggressively'},{name:'Fennel',icon:'🌿',reason:'Allelopathic'}], tips: 'Lettuce bolts in heat — plant in spring/fall or in shade of taller crops. Cut-and-come-again harvesting extends the season significantly.' },
+  'SQUA': { good: [{name:'Corn',icon:'🌽',reason:'Three Sisters — squash shades ground, reduces weeds'},{name:'Beans',icon:'🫘',reason:'Beans fix nitrogen squash needs'},{name:'Nasturtiums',icon:'🌸',reason:'Trap crop for aphids, repel squash bugs'},{name:'Borage',icon:'🌸',reason:'Deters squash vine borers'},{name:'Marigolds',icon:'🌼',reason:'Deter squash bugs and beetles'}], bad: [{name:'Potatoes',icon:'🥔',reason:'Compete for nutrients'},{name:'Fennel',icon:'🌿',reason:'Allelopathic'}], tips: 'Squash needs lots of space and pollinators. Hand-pollinate if fruit drops early. Watch for squash vine borers — row cover early in season helps.' },
+  'CORN': { good: [{name:'Beans',icon:'🫘',reason:'Fix nitrogen, classic Three Sisters'},{name:'Squash',icon:'🎃',reason:'Ground cover, moisture retention'},{name:'Cucumbers',icon:'🥒',reason:'Cucumbers climb corn stalks'},{name:'Melons',icon:'🍈',reason:'Similar needs, good neighbors'}], bad: [{name:'Tomatoes',icon:'🍅',reason:'Share corn earworm/tomato fruitworm'},{name:'Celery',icon:'🌿',reason:'Inhibits corn growth'}], tips: 'Corn needs to be planted in blocks for good pollination — at least 4x4. Heavy feeder, amend with compost before planting.' },
+  'SPIN': { good: [{name:'Strawberries',icon:'🍓',reason:'Mutual benefit, similar season'},{name:'Peas',icon:'🫛',reason:'Fix nitrogen, cool season companions'},{name:'Brassicas',icon:'🥦',reason:'Similar cool season timing'}], bad: [{name:'Potatoes',icon:'🥔',reason:'Inhibit spinach growth'},{name:'Fennel',icon:'🌿',reason:'Allelopathic'}], tips: 'Spinach is a cool-season crop. Sow in late summer for fall harvest. Needs consistent moisture and partial shade in warm weather.' },
+  'MELO': { good: [{name:'Corn',icon:'🌽',reason:'Provide light shade, similar water needs'},{name:'Nasturtiums',icon:'🌸',reason:'Repel aphids and beetles'},{name:'Marigolds',icon:'🌼',reason:'Deter pests'}], bad: [{name:'Cucumbers',icon:'🥒',reason:'Compete for space and nutrients'},{name:'Potatoes',icon:'🥔',reason:'Compete, share diseases'}], tips: 'Melons need warmth, space, and consistent watering until fruit sets, then reduce water to concentrate sugars.' },
+  'ONI': { good: [{name:'Carrots',icon:'🥕',reason:'Classic pairing — onions deter carrot fly'},{name:'Tomatoes',icon:'🍅',reason:'Onions deter aphids around tomatoes'},{name:'Brassicas',icon:'🥦',reason:'Deter cabbage worms'},{name:'Chamomile',icon:'🌼',reason:'Said to improve onion flavor'}], bad: [{name:'Beans',icon:'🫘',reason:'Onions inhibit bean growth'},{name:'Peas',icon:'🫛',reason:'Inhibit each other'},{name:'Sage',icon:'🌿',reason:'Compete and inhibit'}], tips: 'Onions are slow growing — start early. Plant densely and thin for scallions. Keep weed-free as they hate competition.' },
+  'PEA': { good: [{name:'Carrots',icon:'🥕',reason:'Classic companion, different root depths'},{name:'Radishes',icon:'🌱',reason:'Deter aphids'},{name:'Spinach',icon:'🥬',reason:'Cool season companion'},{name:'Lettuce',icon:'🥬',reason:'Similar needs, good use of space'}], bad: [{name:'Onions',icon:'🧅',reason:'Inhibit pea growth'},{name:'Garlic',icon:'🧄',reason:'Inhibit pea growth'},{name:'Gladiolus',icon:'🌸',reason:'Harbor thrips that damage peas'}], tips: 'Peas fix nitrogen — great before heavy feeders. Direct sow as soon as soil can be worked. Provide trellis for climbing varieties.' },
+  'HERB': { good: [{name:'Most vegetables',icon:'🥦',reason:'Herbs generally deter pests and attract beneficials'},{name:'Tomatoes',icon:'🍅',reason:'Basil and parsley are classic tomato companions'},{name:'Brassicas',icon:'🥦',reason:'Dill and sage deter cabbage worms'}], bad: [{name:'Fennel',icon:'🌿',reason:'Allelopathic to most plants — grow alone'},{name:'Rue',icon:'🌿',reason:'Inhibits many vegetables'}], tips: 'Most herbs are beneficial companions. Plant them throughout the garden rather than in one spot for maximum pest deterrent effect.' },
+};
+
 const state = {
   page: 'dashboard',
   varieties: [], seedLots: [], plants: [], projects: [],
@@ -124,7 +140,7 @@ async function loadAll() {
     api('/api/germination'), api('/api/locations'), api('/api/sources'),
     api('/api/crosses'), api('/api/observations'), api('/api/amendments'),
     api('/api/settings'), api('/api/inventory'),
-    api('/api/weather?days=365'), api('/api/frost-events'),
+    api('/api/weather?days=365'), api('/api/frost-events'), api('/api/companions'),
   ];
   if (getRole() === 'admin') calls.push(api('/api/users')); // index 15
   const results = await Promise.all(calls);
@@ -146,7 +162,10 @@ async function loadAll() {
   state.inventory = Array.isArray(results[15]) ? results[15] : [];
   state.weatherLog = Array.isArray(results[16]) ? results[16] : [];
   state.frostEvents = Array.isArray(results[17]) ? results[17] : [];
-  state.users = results[18] && Array.isArray(results[18]) ? results[18] : [];
+  const companionRows = Array.isArray(results[18]) ? results[18] : [];
+  state.companions = {};
+  companionRows.forEach(c => { state.companions[c.species_code] = c; });
+  state.users = results[19] && Array.isArray(results[19]) ? results[19] : [];
 }
 
 function navigate(page) {
@@ -1225,6 +1244,7 @@ function renderSeedLots() {
               <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
               <button class="btn btn-brown btn-sm" onclick="showPacketPhotos('${lot.designation}')">📷</button>
               <button class="btn btn-secondary btn-sm" onclick="showSeedLotQR('${lot.designation}')">⬛ QR</button>
+              <button class="btn btn-secondary btn-sm" onclick="showCompanionPlants('${lot.species_code || lot.variety_code.split('-')[0]}', '${lot.variety_name || lot.variety_code}')">🌿 Companions</button>
               <button class="btn btn-secondary btn-sm" onclick="printSeedLabel('${lot.designation}')">🏷️ Label</button>
               <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
             </td>
@@ -1479,6 +1499,241 @@ function _oldPrintSeedLabel_unused(designation) {
     </html>
   `);
   printWindow.document.close();
+}
+
+const COMPANION_DATA = {
+  CUC: {
+    good: [
+      { name: 'Beans', icon: '🫘', reason: 'Fix nitrogen, improve soil fertility' },
+      { name: 'Corn', icon: '🌽', reason: 'Provides shade, reduces moisture loss' },
+      { name: 'Dill', icon: '🌿', reason: 'Repels aphids and spider mites' },
+      { name: 'Nasturtiums', icon: '🌸', reason: 'Trap crop for aphids, repels squash bugs' },
+      { name: 'Radishes', icon: '🌱', reason: 'Deter cucumber beetles' },
+      { name: 'Sunflowers', icon: '🌻', reason: 'Attract pollinators, provide light shade' },
+    ],
+    bad: [
+      { name: 'Sage', icon: '🌿', reason: 'Inhibits cucumber growth' },
+      { name: 'Potatoes', icon: '🥔', reason: 'Compete for nutrients, share blight' },
+      { name: 'Melons', icon: '🍈', reason: 'Compete for space and nutrients' },
+    ],
+    tips: 'Cucumbers love warmth and consistent moisture. Plant after last frost when soil reaches 60°F. Trellis vertically to save space and improve air circulation.'
+  },
+  TOM: {
+    good: [
+      { name: 'Basil', icon: '🌿', reason: 'Repels aphids, improves flavor' },
+      { name: 'Carrots', icon: '🥕', reason: 'Loosen soil around roots' },
+      { name: 'Marigolds', icon: '🌼', reason: 'Repel nematodes and whiteflies' },
+      { name: 'Parsley', icon: '🌱', reason: 'Attracts beneficial insects' },
+      { name: 'Borage', icon: '🌸', reason: 'Repels tomato hornworm' },
+      { name: 'Garlic', icon: '🧄', reason: 'Deters spider mites and aphids' },
+    ],
+    bad: [
+      { name: 'Fennel', icon: '🌿', reason: 'Inhibits tomato growth' },
+      { name: 'Brassicas', icon: '🥦', reason: 'Compete for nutrients' },
+      { name: 'Corn', icon: '🌽', reason: 'Both attract tomato fruitworm/corn earworm' },
+    ],
+    tips: 'Tomatoes are heavy feeders. Rotate beds every year to prevent disease buildup. Remove suckers for indeterminate varieties to focus energy on fruit.'
+  },
+  PEP: {
+    good: [
+      { name: 'Basil', icon: '🌿', reason: 'Repels aphids, may improve flavor' },
+      { name: 'Carrots', icon: '🥕', reason: 'Loosen soil, compatible root depth' },
+      { name: 'Tomatoes', icon: '🍅', reason: 'Similar needs, good neighbors' },
+      { name: 'Marigolds', icon: '🌼', reason: 'Deter aphids and nematodes' },
+      { name: 'Spinach', icon: '🥬', reason: 'Ground cover, retains moisture' },
+    ],
+    bad: [
+      { name: 'Fennel', icon: '🌿', reason: 'Allelopathic, inhibits growth' },
+      { name: 'Apricots', icon: '🍑', reason: 'Share verticillium wilt' },
+    ],
+    tips: 'Peppers love heat and full sun. They are slow to start — begin indoors 8-10 weeks before last frost. Keep soil consistently moist for best fruit set.'
+  },
+  CAR: {
+    good: [
+      { name: 'Tomatoes', icon: '🍅', reason: 'Tomatoes shade soil, carrots loosen it' },
+      { name: 'Lettuce', icon: '🥬', reason: 'Shallow roots, no competition' },
+      { name: 'Onions', icon: '🧅', reason: 'Deter carrot fly' },
+      { name: 'Sage', icon: '🌿', reason: 'Repels carrot fly' },
+      { name: 'Rosemary', icon: '🌿', reason: 'Deters carrot fly' },
+      { name: 'Chives', icon: '🌱', reason: 'Improve flavor, deter aphids' },
+    ],
+    bad: [
+      { name: 'Dill', icon: '🌿', reason: 'Cross-pollinates, inhibits growth' },
+      { name: 'Parsnips', icon: '🌱', reason: 'Compete for same nutrients and space' },
+      { name: 'Fennel', icon: '🌿', reason: 'Allelopathic to most vegetables' },
+    ],
+    tips: 'Carrots need deep, loose, rock-free soil. Thin seedlings early — crowded carrots fork badly. Sow in early spring or fall for best flavor.'
+  },
+  BEAN: {
+    good: [
+      { name: 'Corn', icon: '🌽', reason: 'Classic Three Sisters — beans fix nitrogen for corn' },
+      { name: 'Squash', icon: '🎃', reason: 'Three Sisters — squash shades ground' },
+      { name: 'Cucumbers', icon: '🥒', reason: 'Beans fix nitrogen cucumbers need' },
+      { name: 'Carrots', icon: '🥕', reason: 'Different root depths, no competition' },
+      { name: 'Marigolds', icon: '🌼', reason: 'Deter Mexican bean beetles' },
+    ],
+    bad: [
+      { name: 'Onions', icon: '🧅', reason: 'Inhibit bean growth' },
+      { name: 'Garlic', icon: '🧄', reason: 'Inhibit bean growth' },
+      { name: 'Fennel', icon: '🌿', reason: 'Allelopathic to beans' },
+    ],
+    tips: 'Beans fix atmospheric nitrogen — great before heavy feeders. Do not over-fertilize with nitrogen or you get leaves, not pods. Direct sow after last frost.'
+  },
+  LETT: {
+    good: [
+      { name: 'Carrots', icon: '🥕', reason: 'Different depths, great neighbors' },
+      { name: 'Radishes', icon: '🌱', reason: 'Break soil, mark slow lettuce rows' },
+      { name: 'Strawberries', icon: '🍓', reason: 'Ground cover, mutual benefit' },
+      { name: 'Chives', icon: '🌱', reason: 'Deter aphids' },
+      { name: 'Tall flowers', icon: '🌸', reason: 'Provide shade in summer heat' },
+    ],
+    bad: [
+      { name: 'Celery', icon: '🌿', reason: 'Compete aggressively' },
+      { name: 'Fennel', icon: '🌿', reason: 'Allelopathic' },
+    ],
+    tips: 'Lettuce bolts in heat — plant in spring/fall or in the shade of taller crops in summer. Cut-and-come-again harvesting extends the season significantly.'
+  },
+  SQUA: {
+    good: [
+      { name: 'Corn', icon: '🌽', reason: 'Three Sisters — squash shades ground, reduces weeds' },
+      { name: 'Beans', icon: '🫘', reason: 'Beans fix nitrogen squash needs' },
+      { name: 'Nasturtiums', icon: '🌸', reason: 'Trap crop for aphids, repel squash bugs' },
+      { name: 'Borage', icon: '🌸', reason: 'Deters squash vine borers' },
+      { name: 'Marigolds', icon: '🌼', reason: 'Deter squash bugs and beetles' },
+    ],
+    bad: [
+      { name: 'Potatoes', icon: '🥔', reason: 'Compete for nutrients' },
+      { name: 'Fennel', icon: '🌿', reason: 'Allelopathic' },
+    ],
+    tips: 'Squash needs lots of space and pollinators. Hand-pollinate if fruit drops early. Watch for squash vine borers — row cover early in season helps.'
+  },
+  CORN: {
+    good: [
+      { name: 'Beans', icon: '🫘', reason: 'Fix nitrogen, classic Three Sisters' },
+      { name: 'Squash', icon: '🎃', reason: 'Ground cover, moisture retention' },
+      { name: 'Cucumbers', icon: '🥒', reason: 'Cucumbers climb corn stalks' },
+      { name: 'Melons', icon: '🍈', reason: 'Similar needs, good neighbors' },
+    ],
+    bad: [
+      { name: 'Tomatoes', icon: '🍅', reason: 'Share corn earworm/tomato fruitworm' },
+      { name: 'Celery', icon: '🌿', reason: 'Inhibits corn growth' },
+    ],
+    tips: 'Corn needs to be planted in blocks, not rows, for good pollination. Plant at least 4x4 block. Heavy feeder — amend with compost before planting.'
+  },
+  SPIN: {
+    good: [
+      { name: 'Strawberries', icon: '🍓', reason: 'Mutual benefit, similar season' },
+      { name: 'Peas', icon: '🫛', reason: 'Fix nitrogen, cool season companions' },
+      { name: 'Brassicas', icon: '🥦', reason: 'Similar cool season timing' },
+    ],
+    bad: [
+      { name: 'Potatoes', icon: '🥔', reason: 'Inhibit spinach growth' },
+      { name: 'Fennel', icon: '🌿', reason: 'Allelopathic' },
+    ],
+    tips: 'Spinach is a cool-season crop — bolt-resistant varieties help in spring. Sow in late summer for fall harvest. Needs consistent moisture and partial shade in warm weather.'
+  },
+  MELO: {
+    good: [
+      { name: 'Corn', icon: '🌽', reason: 'Provide light shade, similar water needs' },
+      { name: 'Nasturtiums', icon: '🌸', reason: 'Repel aphids and beetles' },
+      { name: 'Marigolds', icon: '🌼', reason: 'Deter pests' },
+    ],
+    bad: [
+      { name: 'Cucumbers', icon: '🥒', reason: 'Compete for space and nutrients' },
+      { name: 'Potatoes', icon: '🥔', reason: 'Compete, share diseases' },
+    ],
+    tips: 'Melons need warmth, space, and consistent watering until fruit sets, then reduce water to concentrate sugars. Lift fruit off ground with a sling to prevent rot.'
+  },
+};
+
+function companionModalBody(info, speciesCode, varietyName) {
+  const goodHtml = (info.good || []).map(function(c) {
+    return '<div style="display:flex;gap:8px;padding:8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;border-left:3px solid #22c55e;">'
+      + '<span style="font-size:1.1rem;">' + c.icon + '</span>'
+      + '<div><div style="font-weight:600;font-size:0.85rem;">' + c.name + '</div>'
+      + '<div style="font-size:0.75rem;color:var(--text-muted);">' + c.reason + '</div></div></div>';
+  }).join('');
+  const badHtml = (info.bad || []).map(function(c) {
+    return '<div style="display:flex;gap:8px;padding:8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;border-left:3px solid #ef4444;">'
+      + '<span style="font-size:1.1rem;">' + c.icon + '</span>'
+      + '<div><div style="font-weight:600;font-size:0.85rem;">' + c.name + '</div>'
+      + '<div style="font-size:0.75rem;color:var(--text-muted);">' + c.reason + '</div></div></div>';
+  }).join('');
+  return '<div style="margin-bottom:16px;background:var(--green-bg);border-radius:8px;padding:12px;font-size:0.85rem;color:var(--text-muted);">💡 ' + (info.tips || 'No growing tips yet.') + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
+    + '<div><div style="font-weight:700;color:#22c55e;margin-bottom:8px;font-size:0.9rem;">✅ Good Neighbors</div>' + goodHtml + '</div>'
+    + '<div><div style="font-weight:700;color:#ef4444;margin-bottom:8px;font-size:0.9rem;">❌ Keep Away</div>' + badHtml + '</div>'
+    + '</div>'
+    + '<div class="form-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal()">Close</button>'
+    + '<button class="btn btn-secondary" onclick="showEditCompanions(\'' + speciesCode + '\', \'' + varietyName + '\')">✏️ Edit</button>'
+    + '</div>';
+}
+
+function showCompanionPlants(speciesCode, varietyName) {
+  const dbData = state.companions && state.companions[speciesCode];
+  const builtinData = BUILTIN_COMPANIONS[speciesCode];
+  const info = dbData ? { good: dbData.good_companions, bad: dbData.bad_companions, tips: dbData.tips } : builtinData || null;
+  if (info) {
+    openModal('🌿 Companions — ' + varietyName, companionModalBody(info, speciesCode, varietyName));
+  } else {
+    openModal('🌿 Companions — ' + varietyName,
+      '<div style="text-align:center;padding:24px;">'
+      + '<div style="font-size:3rem;margin-bottom:12px;">🌱</div>'
+      + '<div style="font-weight:600;margin-bottom:8px;">No companion data for this crop yet</div>'
+      + '<div style="color:var(--text-muted);font-size:0.85rem;margin-bottom:20px;">Add companion planting info for <strong>' + varietyName + '</strong> to help yourself and other SeedVault users.</div>'
+      + '</div>'
+      + '<div class="form-actions">'
+      + '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="showEditCompanions(\'' + speciesCode + '\', \'' + varietyName + '\')">+ Add Companion Data</button>'
+      + '</div>'
+    );
+  }
+}
+
+function showEditCompanions(speciesCode, varietyName) {
+  const dbData = state.companions && state.companions[speciesCode];
+  const builtinData = BUILTIN_COMPANIONS[speciesCode];
+  const existing = dbData ? { good: dbData.good_companions, bad: dbData.bad_companions, tips: dbData.tips }
+    : builtinData || { good: [], bad: [], tips: '' };
+  const formatList = function(arr) { return (arr || []).map(function(c) { return c.icon + ' ' + c.name + ' \u2014 ' + c.reason; }).join('\n'); };
+  openModal('✏️ Edit Companions — ' + varietyName,
+    '<div class="alert alert-info" style="font-size:0.82rem;">Format each line as: <strong>emoji Name \u2014 reason</strong><br>Example: 🌿 Basil \u2014 Repels aphids and improves flavor</div>'
+    + '<div class="form-group"><label class="form-label">✅ Good Neighbors (one per line)</label>'
+    + '<textarea class="form-control" id="comp-good" rows="6" style="font-family:monospace;font-size:0.82rem;">' + formatList(existing.good) + '</textarea></div>'
+    + '<div class="form-group"><label class="form-label">❌ Keep Away (one per line)</label>'
+    + '<textarea class="form-control" id="comp-bad" rows="4" style="font-family:monospace;font-size:0.82rem;">' + formatList(existing.bad) + '</textarea></div>'
+    + '<div class="form-group"><label class="form-label">💡 Growing Tips</label>'
+    + '<textarea class="form-control" id="comp-tips" rows="3">' + (existing.tips || '') + '</textarea></div>'
+    + '<div class="form-actions">'
+    + '<button class="btn btn-secondary" onclick="showCompanionPlants(\'' + speciesCode + '\', \'' + varietyName + '\')">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="saveCompanions(\'' + speciesCode + '\', \'' + varietyName + '\')">💾 Save</button>'
+    + '</div>'
+  );
+}
+
+function parseCompanionLine(line) {
+  line = line.trim();
+  if (!line) return null;
+  const dashIdx = line.indexOf(' \u2014 ');
+  if (dashIdx === -1) return null;
+  const namePart = line.substring(0, dashIdx).trim();
+  const reason = line.substring(dashIdx + 3).trim();
+  const spaceIdx = namePart.indexOf(' ');
+  const icon = spaceIdx > -1 ? namePart.substring(0, spaceIdx) : '🌱';
+  const name = spaceIdx > -1 ? namePart.substring(spaceIdx + 1).trim() : namePart;
+  return { icon, name, reason };
+}
+
+async function saveCompanions(speciesCode, varietyName) {
+  const good = document.getElementById('comp-good').value.split('\n').map(parseCompanionLine).filter(Boolean);
+  const bad = document.getElementById('comp-bad').value.split('\n').map(parseCompanionLine).filter(Boolean);
+  const tips = document.getElementById('comp-tips').value.trim();
+  if (good.length === 0 && bad.length === 0) return alert('Please add at least one companion plant.');
+  const result = await api('/api/companions/' + speciesCode, 'POST', { good_companions: good, bad_companions: bad, tips });
+  if (result.error) return alert('Save failed: ' + result.error);
+  await loadAll();
+  showCompanionPlants(speciesCode, varietyName);
 }
 
 function showSeedLotQR(designation) {

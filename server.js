@@ -283,6 +283,15 @@ async function initDB() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'standard';
       ALTER TABLE plants ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES garden_locations(id);
       ALTER TABLE plants ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255);
+      CREATE TABLE IF NOT EXISTS companion_plants (
+        id SERIAL PRIMARY KEY,
+        species_code VARCHAR(20) NOT NULL UNIQUE,
+        good_companions JSONB NOT NULL DEFAULT '[]',
+        bad_companions JSONB NOT NULL DEFAULT '[]',
+        tips TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
       ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS packet_front_path VARCHAR(255);
       ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS packet_back_path VARCHAR(255);
       ALTER TABLE seed_lots ADD COLUMN IF NOT EXISTS quantity_weight DECIMAL(8,2);
@@ -1084,9 +1093,38 @@ app.get('/api/viability', authMiddleware, async (req, res) => {
 });
 
 // BACKUP
+app.get('/api/companions', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM companion_plants ORDER BY species_code');
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/companions/:speciesCode', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM companion_plants WHERE species_code=$1', [req.params.speciesCode]);
+    res.json(result.rows[0] || null);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/companions/:speciesCode', authMiddleware, async (req, res) => {
+  const { good_companions, bad_companions, tips } = req.body;
+  try {
+    const result = await pool.query(
+      `INSERT INTO companion_plants (species_code, good_companions, bad_companions, tips)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (species_code) DO UPDATE SET
+         good_companions=$2, bad_companions=$3, tips=$4, updated_at=NOW()
+       RETURNING *`,
+      [req.params.speciesCode, JSON.stringify(good_companions), JSON.stringify(bad_companions), tips]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 app.get('/api/backup/export-zip', authMiddleware, async (req, res) => {
   try {
-    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources, weatherLog, frostEvents] = await Promise.all([
+    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources, weatherLog, frostEvents, companions] = await Promise.all([
       pool.query('SELECT * FROM species ORDER BY code'),
       pool.query('SELECT * FROM varieties ORDER BY code'),
       pool.query('SELECT * FROM seed_lots ORDER BY designation'),
@@ -1101,6 +1139,7 @@ app.get('/api/backup/export-zip', authMiddleware, async (req, res) => {
       pool.query('SELECT * FROM seed_sources ORDER BY name'),
       pool.query('SELECT * FROM weather_logs ORDER BY log_date'),
       pool.query('SELECT * FROM frost_events ORDER BY event_date'),
+      pool.query('SELECT * FROM companion_plants ORDER BY species_code'),
     ]);
 
     const filename = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.zip';
@@ -1117,7 +1156,7 @@ app.get('/api/backup/export-zip', authMiddleware, async (req, res) => {
         germination_tests: germination.rows, plant_amendments: amendments.rows,
         cross_pollinations: crosses.rows, fruit_observations: observations.rows,
         garden_locations: locations.rows, seed_sources: sources.rows,
-        weather_logs: weatherLog.rows, frost_events: frostEvents.rows }
+        weather_logs: weatherLog.rows, frost_events: frostEvents.rows, companion_plants: companions.rows, companion_plants: companions.rows }
     };
     archive.append(JSON.stringify(data, null, 2), { name: 'seedvault-backup.json' });
 
@@ -1179,6 +1218,7 @@ app.post('/api/backup/import-zip', authMiddleware, async (req, res) => {
       for (const o of (data.fruit_observations || [])) { const r = await client.query('INSERT INTO fruit_observations (plant_designation, observation_date, fruit_count, avg_length_inches, avg_diameter_inches, color, texture, flavor_notes, health_notes, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *', [o.plant_designation, o.observation_date, o.fruit_count, o.avg_length_inches, o.avg_diameter_inches, o.color, o.texture, o.flavor_notes, o.health_notes, o.notes]); r.rowCount > 0 ? imported.fruit_observations++ : skipped.fruit_observations++; }
       for (const w of (data.weather_logs || [])) { await client.query('INSERT INTO weather_logs (log_date, source, condition, high_temp_f, low_temp_f, humidity_pct, precip_inches, wind_mph, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (log_date) DO NOTHING', [w.log_date, w.source, w.condition, w.high_temp_f, w.low_temp_f, w.humidity_pct, w.precip_inches, w.wind_mph, w.notes]); }
       for (const f of (data.frost_events || [])) { await client.query('INSERT INTO frost_events (year, event_type, event_date, confirmed, notes) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING', [f.year, f.event_type, f.event_date, f.confirmed, f.notes]); }
+      for (const c of (data.companion_plants || [])) { await client.query('INSERT INTO companion_plants (species_code, good_companions, bad_companions, tips) VALUES ($1,$2,$3,$4) ON CONFLICT (species_code) DO UPDATE SET good_companions=$2, bad_companions=$3, tips=$4', [c.species_code, JSON.stringify(c.good_companions), JSON.stringify(c.bad_companions), c.tips]); }
       await client.query('COMMIT');
       res.json({ success: true, imported, skipped });
     } catch (err) { await client.query('ROLLBACK'); console.error(err); res.status(500).json({ error: 'Server error: ' + err.message }); }
@@ -1188,7 +1228,7 @@ app.post('/api/backup/import-zip', authMiddleware, async (req, res) => {
 
 app.get('/api/backup/export', authMiddleware, async (req, res) => {
   try {
-    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources, weatherLog, frostEvents] = await Promise.all([
+    const [species, varieties, seedLots, plants, projects, harvest, germination, amendments, crosses, observations, locations, sources, weatherLog, frostEvents, companions] = await Promise.all([
       pool.query('SELECT * FROM species ORDER BY code'),
       pool.query('SELECT * FROM varieties ORDER BY code'),
       pool.query('SELECT * FROM seed_lots ORDER BY designation'),
@@ -1203,6 +1243,7 @@ app.get('/api/backup/export', authMiddleware, async (req, res) => {
       pool.query('SELECT * FROM seed_sources ORDER BY name'),
       pool.query('SELECT * FROM weather_logs ORDER BY log_date'),
       pool.query('SELECT * FROM frost_events ORDER BY event_date'),
+      pool.query('SELECT * FROM companion_plants ORDER BY species_code'),
     ]);
     const filename = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.json';
     res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
@@ -1213,7 +1254,7 @@ app.get('/api/backup/export', authMiddleware, async (req, res) => {
       germination_tests: germination.rows, plant_amendments: amendments.rows,
       cross_pollinations: crosses.rows, fruit_observations: observations.rows,
       garden_locations: locations.rows, seed_sources: sources.rows,
-      weather_logs: weatherLog.rows, frost_events: frostEvents.rows
+      weather_logs: weatherLog.rows, frost_events: frostEvents.rows, companion_plants: companions.rows
     }});
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
