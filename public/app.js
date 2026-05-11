@@ -542,6 +542,29 @@ function renderDashboard() {
       </div>
     </div>
     ${(() => {
+      const lastBackup = state.settings.last_backup_date;
+      if (!lastBackup) {
+        return '<div onclick="navigate(&quot;settings&quot;)" style="background:#b45309;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>💾 <strong>No backup found</strong> — export a ZIP backup to protect your data</span>'
+          + '<span style="font-size:0.85rem;opacity:0.85;">Back up now →</span>'
+          + '</div>';
+      }
+      const days = Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24));
+      if (days >= 14) {
+        return '<div onclick="navigate(&quot;settings&quot;)" style="background:#b91c1c;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>💾 <strong>Backup overdue</strong> — last backup was ' + days + ' days ago</span>'
+          + '<span style="font-size:0.85rem;opacity:0.85;">Back up now →</span>'
+          + '</div>';
+      }
+      if (days >= 7) {
+        return '<div onclick="navigate(&quot;settings&quot;)" style="background:#92400e;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>💾 <strong>Backup reminder</strong> — last backup was ' + days + ' days ago</span>'
+          + '<span style="font-size:0.85rem;opacity:0.85;">Back up now →</span>'
+          + '</div>';
+      }
+      return '';
+    })()}
+    ${(() => {
       if (!state.settings.last_frost_date) return '';
       const today = new Date();
       const year = today.getFullYear();
@@ -4495,6 +4518,7 @@ async function exportZipBackup() {
     const a = document.createElement('a');
     a.href = url; a.download = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.zip'; a.click();
     URL.revokeObjectURL(url);
+    await recordBackupDate();
   } catch (err) { alert('Export failed: ' + err.message); }
 }
 
@@ -4542,7 +4566,16 @@ async function exportBackup() {
     const a = document.createElement('a');
     a.href = url; a.download = 'seedvault-backup-' + new Date().toISOString().split('T')[0] + '.json'; a.click();
     URL.revokeObjectURL(url);
+    await recordBackupDate();
   } catch (err) { alert('Export failed: ' + err.message); }
+}
+
+async function recordBackupDate() {
+  try {
+    await api('/api/settings', 'POST', { key: 'last_backup_date', value: new Date().toISOString().split('T')[0] });
+    state.settings.last_backup_date = new Date().toISOString().split('T')[0];
+    render();
+  } catch(e) { console.warn('Could not record backup date', e); }
 }
 
 async function exportCSV() {
