@@ -95,7 +95,7 @@ function logout() { clearToken(); showLogin(); }
 
 // ==================== STATE ====================
 const BUILTIN_COMPANIONS = {
-  'CUC': { good: [{name:'Beans',icon:'🫘',reason:'Fix nitrogen, improve soil fertility'},{name:'Corn',icon:'🌽',reason:'Provides shade, reduces moisture loss'},{name:'Dill',icon:'🌿',reason:'Repels aphids and spider mites'},{name:'Nasturtiums',icon:'🌸',reason:'Trap crop for aphids, repel squash bugs'},{name:'Radishes',icon:'🌱',reason:'Deter cucumber beetles'},{name:'Sunflowers',icon:'🌻',reason:'Attract pollinators, provide light shade'}], bad: [{name:'Sage',icon:'🌿',reason:'Inhibits cucumber growth'},{name:'Potatoes',icon:'🥔',reason:'Compete for nutrients, share blight'},{name:'Melons',icon:'🍈',reason:'Compete for space and nutrients'}], tips: 'Cucumbers love warmth and consistent moisture. Plant after last frost when soil reaches 60°F. Trellis vertically to save space and improve air circulation.' },
+  'CUC': { good: [{name:'Beans',icon:'🫘',reason:'Fix nitrogen, improve soil fertility',how:'Plant pole beans at the base of cucumber trellis or interplant bush beans between cucumber hills.',distance:'12-18 inches apart',timing:'Plant at the same time after last frost'},{name:'Corn',icon:'🌽',reason:'Provides shade, reduces moisture loss',how:'Plant corn on the west or south side of cucumbers to provide afternoon shade.',distance:'18-24 inches from cucumbers',timing:'Start corn 1-2 weeks before cucumbers'},{name:'Dill',icon:'🌿',reason:'Repels aphids and spider mites',how:'Let dill go to flower for maximum benefit — flowering dill attracts predatory wasps.',distance:'12 inches away',timing:'Plant dill 3-4 weeks before cucumbers so it is established'},{name:'Nasturtiums',icon:'🌸',reason:'Trap crop for aphids, repel squash bugs',how:'Plant nasturtiums as a border around cucumber beds to lure aphids away.',distance:'12 inches from cucumbers',timing:'Plant at the same time or slightly before'},{name:'Radishes',icon:'🌱',reason:'Deter cucumber beetles',how:'Interplant radishes directly between cucumber plants — do not harvest, let them bolt.',distance:'6 inches between radishes',timing:'Direct sow at same time as cucumbers'},{name:'Sunflowers',icon:'🌻',reason:'Attract pollinators, provide light shade',how:'Plant on the north side so they do not shade cucumbers — cucumbers can climb the stalks.',distance:'24 inches away',timing:'Start sunflowers 2 weeks before cucumbers'}], bad: [{name:'Sage',icon:'🌿',reason:'Inhibits cucumber growth',how:'Keep sage at least 3 feet away from cucumber beds.',distance:'Minimum 3 feet',timing:'N/A — avoid proximity entirely'},{name:'Potatoes',icon:'🥔',reason:'Compete for nutrients, share blight',how:'Grow in completely separate beds — they share blight diseases.',distance:'Keep in different beds',timing:'N/A'},{name:'Melons',icon:'🍈',reason:'Compete for space and nutrients',how:'Give each their own bed — they sprawl and compete aggressively.',distance:'Keep in different beds',timing:'N/A'}], tips: 'Cucumbers love warmth and consistent moisture. Plant after last frost when soil reaches 60°F. Trellis vertically to save space and improve air circulation.' },
   'TOM': { good: [{name:'Basil',icon:'🌿',reason:'Repels aphids, improves flavor'},{name:'Carrots',icon:'🥕',reason:'Loosen soil around roots'},{name:'Marigolds',icon:'🌼',reason:'Repel nematodes and whiteflies'},{name:'Parsley',icon:'🌱',reason:'Attracts beneficial insects'},{name:'Borage',icon:'🌸',reason:'Repels tomato hornworm'},{name:'Garlic',icon:'🧄',reason:'Deters spider mites and aphids'}], bad: [{name:'Fennel',icon:'🌿',reason:'Inhibits tomato growth'},{name:'Brassicas',icon:'🥦',reason:'Compete for nutrients'},{name:'Corn',icon:'🌽',reason:'Both attract tomato fruitworm/corn earworm'}], tips: 'Tomatoes are heavy feeders. Rotate beds every year to prevent disease buildup. Remove suckers for indeterminate varieties to focus energy on fruit.' },
   'PEP': { good: [{name:'Basil',icon:'🌿',reason:'Repels aphids, may improve flavor'},{name:'Carrots',icon:'🥕',reason:'Loosen soil, compatible root depth'},{name:'Tomatoes',icon:'🍅',reason:'Similar needs, good neighbors'},{name:'Marigolds',icon:'🌼',reason:'Deter aphids and nematodes'},{name:'Spinach',icon:'🥬',reason:'Ground cover, retains moisture'}], bad: [{name:'Fennel',icon:'🌿',reason:'Allelopathic, inhibits growth'},{name:'Apricots',icon:'🍑',reason:'Share verticillium wilt'}], tips: 'Peppers love heat and full sun. Begin indoors 8-10 weeks before last frost. Keep soil consistently moist for best fruit set.' },
   'CAR': { good: [{name:'Tomatoes',icon:'🍅',reason:'Tomatoes shade soil, carrots loosen it'},{name:'Lettuce',icon:'🥬',reason:'Shallow roots, no competition'},{name:'Onions',icon:'🧅',reason:'Deter carrot fly'},{name:'Sage',icon:'🌿',reason:'Repels carrot fly'},{name:'Rosemary',icon:'🌿',reason:'Deters carrot fly'},{name:'Chives',icon:'🌱',reason:'Improve flavor, deter aphids'}], bad: [{name:'Dill',icon:'🌿',reason:'Cross-pollinates, inhibits growth'},{name:'Parsnips',icon:'🌱',reason:'Compete for same nutrients and space'},{name:'Fennel',icon:'🌿',reason:'Allelopathic to most vegetables'}], tips: 'Carrots need deep, loose, rock-free soil. Thin seedlings early — crowded carrots fork badly. Sow in early spring or fall for best flavor.' },
@@ -108,6 +108,22 @@ const BUILTIN_COMPANIONS = {
   'ONI': { good: [{name:'Carrots',icon:'🥕',reason:'Classic pairing — onions deter carrot fly'},{name:'Tomatoes',icon:'🍅',reason:'Onions deter aphids around tomatoes'},{name:'Brassicas',icon:'🥦',reason:'Deter cabbage worms'},{name:'Chamomile',icon:'🌼',reason:'Said to improve onion flavor'}], bad: [{name:'Beans',icon:'🫘',reason:'Onions inhibit bean growth'},{name:'Peas',icon:'🫛',reason:'Inhibit each other'},{name:'Sage',icon:'🌿',reason:'Compete and inhibit'}], tips: 'Onions are slow growing — start early. Plant densely and thin for scallions. Keep weed-free as they hate competition.' },
   'PEA': { good: [{name:'Carrots',icon:'🥕',reason:'Classic companion, different root depths'},{name:'Radishes',icon:'🌱',reason:'Deter aphids'},{name:'Spinach',icon:'🥬',reason:'Cool season companion'},{name:'Lettuce',icon:'🥬',reason:'Similar needs, good use of space'}], bad: [{name:'Onions',icon:'🧅',reason:'Inhibit pea growth'},{name:'Garlic',icon:'🧄',reason:'Inhibit pea growth'},{name:'Gladiolus',icon:'🌸',reason:'Harbor thrips that damage peas'}], tips: 'Peas fix nitrogen — great before heavy feeders. Direct sow as soon as soil can be worked. Provide trellis for climbing varieties.' },
   'HERB': { good: [{name:'Most vegetables',icon:'🥦',reason:'Herbs generally deter pests and attract beneficials'},{name:'Tomatoes',icon:'🍅',reason:'Basil and parsley are classic tomato companions'},{name:'Brassicas',icon:'🥦',reason:'Dill and sage deter cabbage worms'}], bad: [{name:'Fennel',icon:'🌿',reason:'Allelopathic to most plants — grow alone'},{name:'Rue',icon:'🌿',reason:'Inhibits many vegetables'}], tips: 'Most herbs are beneficial companions. Plant them throughout the garden rather than in one spot for maximum pest deterrent effect.' },
+  'MARI': { good: [{name:'Tomatoes',icon:'🍅',reason:'Repel nematodes, whiteflies and aphids'},{name:'Peppers',icon:'🫑',reason:'Deter aphids and nematodes'},{name:'Squash',icon:'🎃',reason:'Repel squash bugs and beetles'},{name:'Cucumbers',icon:'🥒',reason:'General pest deterrent'},{name:'Brassicas',icon:'🥦',reason:'Deter cabbage worms and aphids'}], bad: [{name:'Fennel',icon:'🌿',reason:'Allelopathic, inhibits marigold growth'}], tips: 'Marigolds are one of the most powerful companion plants. French marigolds (Tagetes patula) are most effective — their roots secrete a substance that kills nematodes. Plant densely around the garden perimeter and between rows.' },
+  'NAST': { good: [{name:'Tomatoes',icon:'🍅',reason:'Trap crop for aphids, keeping them off tomatoes'},{name:'Cucumbers',icon:'🥒',reason:'Repel cucumber beetles and aphids'},{name:'Squash',icon:'🎃',reason:'Trap crop for aphids and squash bugs'},{name:'Brassicas',icon:'🥦',reason:'Trap crop for aphids and caterpillars'},{name:'Beans',icon:'🫘',reason:'Deter aphids and beetles'}], bad: [{name:'Fennel',icon:'🌿',reason:'Allelopathic, inhibits nasturtium growth'}], tips: 'Nasturtiums are edible — flowers and leaves have a peppery flavor. They work as a trap crop by luring aphids away from vegetables. Both trailing and climbing varieties work well. Self-seed readily.' },
+  'BORA': { good: [{name:'Tomatoes',icon:'🍅',reason:'Repels tomato hornworm, attracts pollinators'},{name:'Squash',icon:'🎃',reason:'Deters squash vine borers'},{name:'Strawberries',icon:'🍓',reason:'Classic pairing, improves flavor and yield'},{name:'Brassicas',icon:'🥦',reason:'Repels cabbage worms'}], bad: [{name:'None known',icon:'✅',reason:'Borage is beneficial to nearly everything'}], tips: 'Borage is one of the best all-around companion plants. It attracts bees and beneficial insects, repels major pests, and is edible. Self-seeds aggressively so plant where you want it to spread.' },
+  'SUNF': { good: [{name:'Cucumbers',icon:'🥒',reason:'Cucumbers climb stalks, shade reduces moisture loss'},{name:'Corn',icon:'🌽',reason:'Similar needs, attract pollinators together'},{name:'Squash',icon:'🎃',reason:'Attract pollinators, provide light shade'},{name:'Tomatoes',icon:'🍅',reason:'Attract beneficial insects and pollinators'}], bad: [{name:'Potatoes',icon:'🥔',reason:'Sunflowers inhibit potato growth'},{name:'Pole beans',icon:'🫘',reason:'Compete for vertical space and light'}], tips: 'Sunflowers attract pollinators and beneficial insects. Plant on the north side of the garden so they do not shade shorter crops. Excellent for attracting birds that eat pest insects.' },
+  'CHAM': { good: [{name:'Brassicas',icon:'🥦',reason:'Improves growth and flavor of cabbage family'},{name:'Onions',icon:'🧅',reason:'Said to improve onion flavor'},{name:'Cucumbers',icon:'🥒',reason:'Attracts beneficial insects'},{name:'Most vegetables',icon:'🥦',reason:'General beneficial insect attractor'}], bad: [{name:'None known',icon:'✅',reason:'Chamomile is broadly beneficial in small amounts'}], tips: 'Chamomile is called the physicians plant — it improves the health of plants growing nearby. Makes excellent tea and attracts hoverflies whose larvae eat aphids.' },
+  'ZINN': { good: [{name:'Tomatoes',icon:'🍅',reason:'Attract pollinators and beneficial wasps'},{name:'Peppers',icon:'🫑',reason:'Attract pollinators'},{name:'Cucumbers',icon:'🥒',reason:'Attract bees for pollination'},{name:'Squash',icon:'🎃',reason:'Attract pollinators, critical for squash fruit set'}], bad: [{name:'None known',icon:'✅',reason:'Zinnias are broadly beneficial pollinator attractors'}], tips: 'Zinnias are one of the best flowers for attracting pollinators and beneficial insects. Plant in clusters for maximum effect. Deadhead regularly to extend bloom time through the season.' },
+  'CALE': { good: [{name:'Tomatoes',icon:'🍅',reason:'Repel tomato hornworm and whiteflies'},{name:'Brassicas',icon:'🥦',reason:'Deter aphids and cabbage worms'},{name:'Carrots',icon:'🥕',reason:'Attract beneficial insects'},{name:'Asparagus',icon:'🌱',reason:'Classic pairing, mutual benefit'}], bad: [{name:'None known',icon:'✅',reason:'Calendula is broadly beneficial'}], tips: 'Calendula (pot marigold) has edible petals and blooms all season. It self-seeds readily and deters many common garden pests.' },
+  'BASI': { good: [{name:'Tomatoes',icon:'🍅',reason:'Repels aphids, thrips, and whiteflies — may improve flavor'},{name:'Peppers',icon:'🫑',reason:'Repels aphids and spider mites'},{name:'Marigolds',icon:'🌼',reason:'Together make a powerful pest deterrent duo'}], bad: [{name:'Sage',icon:'🌿',reason:'Inhibit each other when planted too close'},{name:'Fennel',icon:'🌿',reason:'Allelopathic to basil'}], tips: 'Plant basil throughout the tomato and pepper beds. Pinch flowers off regularly to keep the plant producing leaves. Sweet basil is most effective as a companion.' },
+  'DILL': { good: [{name:'Brassicas',icon:'🥦',reason:'Attracts beneficial wasps that prey on cabbage worms'},{name:'Lettuce',icon:'🥬',reason:'Compatible, attracts beneficials'},{name:'Onions',icon:'🧅',reason:'Good neighbors in the herb garden'},{name:'Corn',icon:'🌽',reason:'Attracts beneficial insects'}], bad: [{name:'Carrots',icon:'🥕',reason:'Cross-pollinates and inhibits carrot growth'},{name:'Tomatoes',icon:'🍅',reason:'Young dill inhibits tomatoes — only mature dill is beneficial'},{name:'Peppers',icon:'🫑',reason:'Can inhibit pepper growth'}], tips: 'Let dill go to flower to attract the most beneficial insects. Keep away from carrots and fennel as they cross-pollinate.' },
+  'CORI': { good: [{name:'Spinach',icon:'🥬',reason:'Attracts beneficial insects, compatible needs'},{name:'Lettuce',icon:'🥬',reason:'Cool season companions'},{name:'Brassicas',icon:'🥦',reason:'Attracts beneficial wasps'},{name:'Beans',icon:'🫘',reason:'Attracts pollinators and beneficials'}], bad: [{name:'Fennel',icon:'🌿',reason:'Cross-pollinates and inhibits'},{name:'Dill',icon:'🌿',reason:'Cross-pollinates, keep separated'}], tips: 'Cilantro bolts quickly in heat — succession plant every 2-3 weeks. Once it bolts the flowers attract enormous numbers of beneficial insects.' },
+  'PARS': { good: [{name:'Tomatoes',icon:'🍅',reason:'Attracts predatory wasps that eat tomato pests'},{name:'Asparagus',icon:'🌱',reason:'Classic long-term pairing, mutual benefit'},{name:'Corn',icon:'🌽',reason:'Attracts beneficial insects'}], bad: [{name:'Mint',icon:'🌿',reason:'Mint aggressively outcompetes parsley'},{name:'Onions',icon:'🧅',reason:'Inhibit parsley growth'}], tips: 'Parsley is biennial — let it overwinter and flower in year two to attract huge numbers of beneficial insects.' },
+  'CHIV': { good: [{name:'Carrots',icon:'🥕',reason:'Improve flavor and deter carrot fly'},{name:'Tomatoes',icon:'🍅',reason:'Deter aphids'},{name:'Brassicas',icon:'🥦',reason:'Deter aphids and cabbage worms'}], bad: [{name:'Beans',icon:'🫘',reason:'Onion family inhibits bean growth'},{name:'Peas',icon:'🫛',reason:'Onion family inhibits pea growth'}], tips: 'Chives are one of the easiest perennial herbs. The purple flowers are edible. Divide clumps every few years to keep them vigorous.' },
+  'ROSE': { good: [{name:'Tomatoes',icon:'🍅',reason:'Repels spider mites and Mexican bean beetles'},{name:'Brassicas',icon:'🥦',reason:'Repels cabbage moths and bean beetles'},{name:'Beans',icon:'🫘',reason:'Deters bean beetles'},{name:'Carrots',icon:'🥕',reason:'Repels carrot fly'}], bad: [{name:'Cucumbers',icon:'🥒',reason:'Inhibits cucumber growth'},{name:'Pumpkins',icon:'🎃',reason:'Allelopathic to cucurbits'}], tips: 'Rosemary is a drought-tolerant perennial that repels a wide range of pests. Not cold-hardy below zone 7 — grow in pots to overwinter indoors.' },
+  'SAGE': { good: [{name:'Brassicas',icon:'🥦',reason:'Deters cabbage moths, whiteflies, and aphids'},{name:'Carrots',icon:'🥕',reason:'Repels carrot fly'},{name:'Tomatoes',icon:'🍅',reason:'Deters flea beetles'},{name:'Strawberries',icon:'🍓',reason:'Improves flavor and growth'}], bad: [{name:'Cucumbers',icon:'🥒',reason:'Inhibits cucumber growth'},{name:'Onions',icon:'🧅',reason:'Compete and inhibit each other'},{name:'Basil',icon:'🌿',reason:'Inhibit each other when too close'}], tips: 'Sage is a perennial that gets woody with age — cut back hard in spring. Extremely effective against cabbage family pests.' },
+  'THYM': { good: [{name:'Brassicas',icon:'🥦',reason:'Repels cabbage worms and whiteflies'},{name:'Tomatoes',icon:'🍅',reason:'Deters tomato hornworm'},{name:'Eggplant',icon:'🍆',reason:'Repels flea beetles'},{name:'Strawberries',icon:'🍓',reason:'Improves vigor and flavor'}], bad: [{name:'None known',icon:'✅',reason:'Thyme is broadly beneficial to most vegetables'}], tips: 'Thyme is a low-growing perennial that works well as ground cover between taller plants. Excellent pollinator attractor when in flower.' },
+  'MINT': { good: [{name:'Brassicas',icon:'🥦',reason:'Strongly repels cabbage moths and aphids'},{name:'Tomatoes',icon:'🍅',reason:'Repels aphids and flea beetles'},{name:'Peas',icon:'🫛',reason:'Repels aphids'},{name:'Carrots',icon:'🥕',reason:'Repels carrot fly'}], bad: [{name:'Parsley',icon:'🌿',reason:'Mint aggressively outcompetes parsley'},{name:'Chamomile',icon:'🌼',reason:'Mint can overwhelm chamomile'}], tips: 'Mint is extremely aggressive — always grow in containers or with a root barrier buried 12 inches deep. Spearmint and peppermint are most potent for pest repelling.' },
 };
 
 const state = {
@@ -1669,18 +1685,59 @@ const COMPANION_DATA = {
   },
 };
 
+function companionCard(c, borderColor, expandedId) {
+  var hasDetail = !!(c.how || c.distance || c.timing);
+  var html = '<div style="padding:8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;border-left:3px solid ' + borderColor + ';cursor:' + (hasDetail ? 'pointer' : 'default') + ';"';
+  if (hasDetail) html += ' onclick="toggleCompanionDetail(this)"';
+  html += ' data-id="' + expandedId + '">';
+  html += '<div style="display:flex;gap:8px;align-items:center;">';
+  html += '<span style="font-size:1.1rem;">' + c.icon + '</span>';
+  html += '<div style="flex:1;"><div style="font-weight:600;font-size:0.85rem;">' + c.name;
+  if (hasDetail) html += ' <span style="font-size:0.7rem;color:var(--text-muted);">&#9660; details</span>';
+  html += '</div><div style="font-size:0.75rem;color:var(--text-muted);">' + c.reason + '</div></div></div>';
+  if (hasDetail) {
+    html += '<div class="comp-detail" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">';
+    if (c.how) html += '<div style="font-size:0.78rem;margin-bottom:4px;"><span style="color:var(--green-mid);font-weight:600;">How to plant:</span> ' + c.how + '</div>';
+    if (c.distance) html += '<div style="font-size:0.78rem;margin-bottom:4px;"><span style="color:var(--green-mid);font-weight:600;">Distance:</span> ' + c.distance + '</div>';
+    if (c.timing) html += '<div style="font-size:0.78rem;"><span style="color:var(--green-mid);font-weight:600;">Timing:</span> ' + c.timing + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function toggleCompanionDetail(el) {
+  var detail = el.querySelector('.comp-detail');
+  if (!detail) return;
+  detail.style.display = detail.style.display === 'block' ? 'none' : 'block';
+}
+
+
+
 function companionModalBody(info, speciesCode, varietyName) {
+  var idx = 0;
+  var goodHtml = (info.good || []).map(function(c) { return companionCard(c, '#22c55e', 'g' + (idx++)); }).join('');
+  var badHtml = (info.bad || []).map(function(c) { return companionCard(c, '#ef4444', 'b' + (idx++)); }).join('');
+  return '<div style="margin-bottom:16px;background:var(--green-bg);border-radius:8px;padding:12px;font-size:0.85rem;color:var(--text-muted);">\u{1F4A1} ' + (info.tips || 'No growing tips yet.') + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
+    + '<div><div style="font-weight:700;color:#22c55e;margin-bottom:8px;font-size:0.9rem;">\u2705 Good Neighbors</div>' + goodHtml + '</div>'
+    + '<div><div style="font-weight:700;color:#ef4444;margin-bottom:8px;font-size:0.9rem;">\u274C Keep Away</div>' + badHtml + '</div>'
+    + '</div>'
+    + '<div class="form-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal()">Close</button>'
+    + '<button class="btn btn-secondary" onclick="showEditCompanions(' + JSON.stringify(speciesCode) + ', ' + JSON.stringify(varietyName) + ')">\u270F\uFE0F Edit</button>'
+    + '</div>';
+}
+
+
+
+function companionModalBody(info, speciesCode, varietyName) {
+  let idx = 0;
   const goodHtml = (info.good || []).map(function(c) {
-    return '<div style="display:flex;gap:8px;padding:8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;border-left:3px solid #22c55e;">'
-      + '<span style="font-size:1.1rem;">' + c.icon + '</span>'
-      + '<div><div style="font-weight:600;font-size:0.85rem;">' + c.name + '</div>'
-      + '<div style="font-size:0.75rem;color:var(--text-muted);">' + c.reason + '</div></div></div>';
+    return companionCard(c, '#22c55e', 'g' + (idx++));
   }).join('');
   const badHtml = (info.bad || []).map(function(c) {
-    return '<div style="display:flex;gap:8px;padding:8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;border-left:3px solid #ef4444;">'
-      + '<span style="font-size:1.1rem;">' + c.icon + '</span>'
-      + '<div><div style="font-weight:600;font-size:0.85rem;">' + c.name + '</div>'
-      + '<div style="font-size:0.75rem;color:var(--text-muted);">' + c.reason + '</div></div></div>';
+    return companionCard(c, '#ef4444', 'b' + (idx++));
   }).join('');
   return '<div style="margin-bottom:16px;background:var(--green-bg);border-radius:8px;padding:12px;font-size:0.85rem;color:var(--text-muted);">💡 ' + (info.tips || 'No growing tips yet.') + '</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
@@ -1689,7 +1746,7 @@ function companionModalBody(info, speciesCode, varietyName) {
     + '</div>'
     + '<div class="form-actions">'
     + '<button class="btn btn-secondary" onclick="closeModal()">Close</button>'
-    + '<button class="btn btn-secondary" onclick="showEditCompanions(\'' + speciesCode + '\', \'' + varietyName + '\')">✏️ Edit</button>'
+    + '<button class="btn btn-secondary" onclick="showEditCompanions(\"' + speciesCode + '\", \"' + varietyName + '\")">✏️ Edit</button>'
     + '</div>';
 }
 
