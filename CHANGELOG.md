@@ -1,6 +1,18 @@
 # Changelog
-
 All notable changes to SeedVault will be documented here.
+
+## [1.2.0] - 2026-05-10
+### Added
+- Weather log rows clickable — full detail modal showing all logged fields with Edit button
+- Growing Degree Days (GDD) — automatic calculation from last frost date with crop progress bars for cucumbers, tomatoes, peppers, beans, corn, and squash
+- Companion planting — built-in data for 13 crop types, DB storage for custom entries, Add/Edit UI, falls back to built-in data automatically
+- Season Comparison Report — compare variety performance across multiple seasons side by side
+- Weather "View All" toggle — show all logged entries, not just the last 10
+- Docker Hub auto-tags version from package.json on every push via GitHub Actions
+### Fixed
+- Backup now includes weather_logs and frost_events in all export formats (ZIP, JSON, import)
+- Duplicate GitHub Actions workflow file removed
+- Version display updated to v1.2.0 in nav bar and settings
 
 ## [1.1.1] - 2026-05-10
 ### Added
@@ -9,7 +21,6 @@ All notable changes to SeedVault will be documented here.
 - ZIP backup with photos — full backup including all uploaded images
 - GitHub Actions — auto build and push to Docker Hub on every commit
 - Multi-arch Docker images — AMD64 and ARM64 (Raspberry Pi) support
-
 ### Fixed
 - Nav bar overflow on smaller screens
 - Beans species code corrected to BEAN
@@ -26,7 +37,7 @@ All notable changes to SeedVault will be documented here.
 - Season summary print report
 - Dymo label printing — multiple label sizes with QR code
 - QR codes for seed lots and plant stakes
-- Weather widget — live weather from Open-Meteo
+- Weather widget — live weather from OpenWeatherMap
 - Frost date settings and warnings
 - Planting window calculator based on frost dates
 - Search and filter on every page
@@ -45,7 +56,6 @@ All notable changes to SeedVault will be documented here.
 - Tooltips on action buttons
 - PWA install prompt
 - Docker Hub publish — duhato/seedvault
-
 ### Fixed
 - iPad login — no more cache clearing needed
 - Photo uploads persistent across restarts
