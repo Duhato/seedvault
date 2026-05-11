@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to SeedVault will be documented here.
 
+## [1.2.1] - 2026-05-10
+### Added
+- Backup reminder banner on dashboard — orange if never backed up, yellow after 7 days, red after 14 days, click to go straight to backup
+- Last backup date tracked automatically whenever ZIP or JSON export is downloaded
+
 ## [1.2.0] - 2026-05-10
 ### Added
 - Weather log rows clickable — full detail modal showing all logged fields with Edit button

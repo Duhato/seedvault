@@ -178,6 +178,8 @@ Go to Settings → Backup & Restore. The **Export ZIP** option includes everythi
 
 Import the ZIP on a fresh install to restore completely.
 
+SeedVault reminds you to back up via a dashboard banner — yellow after 7 days, red after 14 days. Click it to go straight to the backup page. Save your ZIP to a flash drive, your PC, or anywhere you keep important files.
+
 ## QR Code Workflow
 
 1. Add a seed lot to SeedVault

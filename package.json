@@ -1,6 +1,6 @@
 {
   "name": "seedvault",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Self-hosted seed saving and plant breeding tracker",
   "main": "server.js",
   "scripts": {
