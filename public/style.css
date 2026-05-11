@@ -78,15 +78,17 @@ body {
 
 #navbar {
   background: var(--green-dark);
-  padding: 0 20px;
+  padding: 8px 20px;
   display: flex;
   align-items: center;
   gap: 20px;
-  height: 56px;
+  min-height: 56px;
+  height: auto;
   position: sticky;
   top: 0;
   z-index: 100;
   box-shadow: var(--shadow);
+  flex-wrap: wrap;
 }
 
 .nav-brand {
@@ -102,9 +104,8 @@ body {
 .nav-icon { font-size: 1.4rem; }
 
 .nav-links {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   flex: 1;
 }

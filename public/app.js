@@ -215,6 +215,7 @@ function render() {
     case 'observations': main.innerHTML = renderObservations(); break;
     case 'amendments': main.innerHTML = renderAmendments(); break;
     case 'weather': main.innerHTML = renderWeather(); break;
+    case 'resources': main.innerHTML = renderResources(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
   }
 }
@@ -4020,6 +4021,46 @@ async function submitFrostEvent() {
   closeModal(); await loadAll(); render();
   alert('✅ Frost event recorded! If confirmed, your frost date settings have been updated.');
 }
+
+function openResource(el) {
+  var url = el.getAttribute('data-url');
+  if (url) window.open(url, '_blank');
+}
+
+function renderResources() {
+  const exchanges = [
+    { name: 'Seed Savers Exchange', icon: '🌽', description: 'Americas largest heirloom seed library. Trade, buy, and preserve rare open-pollinated varieties. Nonprofit founded in 1975.', specialty: 'Heirloom & Heritage varieties', url: 'https://www.seedsavers.org', free: true },
+    { name: "Baker Creek Rare Seeds", icon: '🌺', description: 'One of the largest selections of rare, open-pollinated, non-GMO heirloom seeds. Specializes in varieties from around the world.', specialty: 'Rare & International varieties', url: 'https://www.rareseeds.com', free: false },
+    { name: 'Southern Exposure Seed Exchange', icon: '🌻', description: 'Focus on varieties suited to the mid-Atlantic and southeastern US. Excellent for heat-tolerant and disease-resistant varieties.', specialty: 'Southeast US adapted varieties', url: 'https://www.southernexposure.com', free: false },
+    { name: 'High Mowing Organic Seeds', icon: '🥦', description: 'Certified organic seed producer in Vermont. All varieties are trialed on their farm. Excellent germination rates.', specialty: 'Certified organic seeds', url: 'https://www.highmowingseeds.com', free: false },
+    { name: "Johnny's Selected Seeds", icon: '🥕', description: 'Employee-owned company with extensive variety trials. Excellent growing information and planting guides for every variety.', specialty: 'Trialed varieties with detailed info', url: 'https://www.johnnyseeds.com', free: false },
+    { name: 'Burpee Seeds', icon: '🍅', description: 'One of the oldest seed companies in America. Wide selection of vegetable, herb, and flower seeds with detailed planting guides.', specialty: 'Wide variety selection', url: 'https://www.burpee.com', free: false },
+    { name: 'r/SeedSwap', icon: '🤝', description: 'Active Reddit community for trading seeds with gardeners worldwide. Free to join. Great for finding rare varieties and connecting with other seed savers.', specialty: 'Free community seed trading', url: 'https://www.reddit.com/r/SeedSwap', free: true },
+    { name: 'Growstuff', icon: '🌱', description: 'Open source food gardening community. Track your garden, connect with other gardeners, and find seeds to trade.', specialty: 'Community & tracking', url: 'https://www.growstuff.org', free: true },
+    { name: 'Trade Winds Fruit', icon: '🍉', description: 'Specializes in rare tropical and subtropical fruit seeds. Excellent source for unusual varieties not found elsewhere.', specialty: 'Rare tropical varieties', url: 'https://www.tradewindsfruit.com', free: false },
+    { name: 'Peaceful Valley Farm Supply', icon: '🌾', description: 'Organic seeds, cover crops, and farming supplies. Great resource for large garden and small farm needs.', specialty: 'Organic & cover crops', url: 'https://www.groworganic.com', free: false },
+    { name: "Old Farmer's Almanac", icon: '📅', description: 'Comprehensive planting guides, frost date calculator, and gardening advice. Free resource for growing info on any vegetable or herb.', specialty: 'Planting guides & growing info', url: 'https://www.almanac.com/gardening', free: true },
+    { name: 'National Gardening Association', icon: '🏡', description: 'Plant database, growing guides, and gardening community. Excellent reference for plant spacing, care, and companion planting.', specialty: 'Plant database & guides', url: 'https://garden.org', free: true },
+  ];
+
+  const cards = exchanges.map(function(e) {
+    return '<div data-url="' + e.url + '" style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:opacity 0.15s;display:flex;flex-direction:column;gap:8px;" onclick="openResource(this)" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+      + '<div style="font-size:2rem;">' + e.icon + '</div>'
+      + (e.free ? '<span style="background:#166534;color:#86efac;font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:600;">FREE</span>' : '')
+      + '</div>'
+      + '<div style="font-weight:700;font-size:1rem;">' + e.name + '</div>'
+      + '<div style="font-size:0.75rem;color:var(--green-mid);font-weight:600;">' + e.specialty + '</div>'
+      + '<div style="font-size:0.82rem;color:var(--text-muted);flex:1;">' + e.description + '</div>'
+      + '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">' + e.url.replace('https://','') + '</div>'
+      + '</div>';
+  }).join('');
+
+  return '<div class="page-header"><h1 class="page-title">🌐 Seed Resources</h1></div>'
+    + '<div class="alert alert-info" style="margin-bottom:20px;">Click any card to visit that resource. These are trusted seed exchanges, suppliers, and gardening references used by the seed saving community.</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">' + cards + '</div>';
+}
+
 
 function renderSettings() {
   const isAdmin = getRole() === 'admin';
