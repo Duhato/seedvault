@@ -4095,7 +4095,7 @@ function renderSettings() {
     </div>
     <div class="card">
       <div class="settings-section-title">ℹ️ About SeedVault</div>
-      <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.1.0</p></div></div>
+      <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.2.0</p></div></div>
       <div class="settings-row"><div class="settings-row-info"><h4>Database Records</h4><p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season · ${state.germination.length} germination tests · ${state.harvest.length} harvest records · ${state.amendments.length} amendments</p></div></div>
       <div class="settings-row"><div class="settings-row-info"><h4>Photos</h4><p>${state.plants.filter(p => p.photo_path).length} plant photos · ${state.seedLots.filter(l => l.packet_front_path || l.packet_back_path).length} seed packets with photos</p></div></div>
       <div class="settings-row">
