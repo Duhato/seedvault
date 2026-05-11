@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to SeedVault will be documented here.
 
+## [1.2.3] - 2026-05-10
+### Fixed
+- ZIP and JSON export failing due to wrong table name (weather_logs vs weather_log)
+- Backup reminder banner not clearing after export — settings API was using POST instead of PUT
+- Duplicate companion_plants key in export data object
+
 ## [1.2.2] - 2026-05-10
 ### Added
 - Companion cards expand on click showing how to plant, distance, and timing details
