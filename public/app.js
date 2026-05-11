@@ -2321,6 +2321,7 @@ function showPlantDetail(designation) {
         <button class="btn btn-primary btn-sm" onclick="closeModal();showAddAmendment('${designation}');">🌿 Amend</button>
         <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${designation}', ${!p.selected_for_seed});closeModal();">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
         <button class="btn btn-secondary btn-sm" onclick="closeModal();printSeedLabel('${p.seed_lot_designation}');">🏷️ Label</button>
+        ${state.settings.ai_provider ? `<button class="btn btn-secondary btn-sm" onclick="closeModal();showPestHelper('${designation}', '${p.variety_name || p.variety_code}');">🐛 Pest Help</button>` : ''}
       </div>
     </div>
   `);
@@ -3695,15 +3696,32 @@ function renderWeather() {
   }, 0));
   const gddDaysLogged = gddLog.length;
 
-  // GDD thresholds for common crops (base 50°F)
+  // GDD thresholds per crop with individual base temps
+  // Base temp is the minimum temp at which that crop grows
   const gddCrops = [
-    { name: 'Cucumbers', min: 800, max: 1200, icon: '🥒' },
-    { name: 'Tomatoes', min: 1000, max: 1400, icon: '🍅' },
-    { name: 'Peppers', min: 1200, max: 1600, icon: '🫑' },
-    { name: 'Beans', min: 600, max: 900, icon: '🫘' },
-    { name: 'Corn', min: 1200, max: 1800, icon: '🌽' },
-    { name: 'Squash', min: 800, max: 1200, icon: '🎃' },
+    { name: 'Cucumbers', min: 800, max: 1200, icon: '🥒', base: 50 },
+    { name: 'Tomatoes', min: 1000, max: 1400, icon: '🍅', base: 50 },
+    { name: 'Peppers', min: 1200, max: 1600, icon: '🫑', base: 50 },
+    { name: 'Beans', min: 600, max: 900, icon: '🫘', base: 50 },
+    { name: 'Corn', min: 1200, max: 1800, icon: '🌽', base: 50 },
+    { name: 'Squash', min: 800, max: 1200, icon: '🎃', base: 50 },
+    { name: 'Carrots', min: 800, max: 1200, icon: '🥕', base: 40 },
+    { name: 'Lettuce', min: 500, max: 900, icon: '🥬', base: 40 },
+    { name: 'Spinach', min: 400, max: 800, icon: '🌿', base: 40 },
+    { name: 'Peas', min: 600, max: 1000, icon: '🫛', base: 40 },
+    { name: 'Onions', min: 700, max: 1100, icon: '🧅', base: 40 },
+    { name: 'Melons', min: 1200, max: 1800, icon: '🍈', base: 50 },
   ];
+  // Calculate per-crop GDD using each crop's own base temp
+  const gddByBase = {};
+  gddLog.forEach(function(w) {
+    const high = parseFloat(w.high_temp_f || 0);
+    const low = parseFloat(w.low_temp_f || 0);
+    [40, 50].forEach(function(base) {
+      if (!gddByBase[base]) gddByBase[base] = 0;
+      gddByBase[base] += Math.max(0, ((high + low) / 2) - base);
+    });
+  });
 
   // Calculate personal frost averages
   const lastSpringFrosts = state.frostEvents.filter(f => f.event_type === 'last_spring' && f.confirmed);
@@ -3755,9 +3773,10 @@ function renderWeather() {
         </div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
           ${gddCrops.map(crop => {
-            const pct = Math.min(100, Math.round((totalGDD / crop.max) * 100));
-            const done = totalGDD >= crop.max;
-            const started = totalGDD >= crop.min;
+            const cropGDD = Math.round(gddByBase[crop.base] || 0);
+            const pct = Math.min(100, Math.round((cropGDD / crop.max) * 100));
+            const done = cropGDD >= crop.max;
+            const started = cropGDD >= crop.min;
             const color = done ? '#22c55e' : started ? '#f59e0b' : 'var(--green-mid)';
             const label = done ? 'Mature' : started ? 'Growing' : 'Building';
             return '<div style="background:var(--green-bg);border-radius:8px;padding:8px;">'
@@ -4382,6 +4401,69 @@ function applyGrowingInfo() {
     }
   });
   document.getElementById('ai-growing-preview').style.display = 'none';
+}
+
+function showPestHelper(designation, varietyName) {
+  if (!state.settings.ai_provider) return;
+  var html = '<div class="alert alert-info" style="font-size:0.85rem;">Describe what you are seeing on your plant and AI will help identify the problem and suggest treatment.</div>'
+    + '<div class="form-group"><label class="form-label">What are you seeing?</label>'
+    + '<textarea class="form-control" id="pest-description" rows="4" placeholder="e.g. Yellow spots on leaves, white powder on stems, holes in leaves, wilting despite watering..."></textarea></div>'
+    + '<div class="form-group"><label class="form-label">Where on the plant?</label>'
+    + '<select class="form-control" id="pest-location">'
+    + '<option value="leaves">Leaves</option>'
+    + '<option value="stems">Stems</option>'
+    + '<option value="roots">Roots/Soil</option>'
+    + '<option value="fruit">Fruit</option>'
+    + '<option value="whole plant">Whole plant</option>'
+    + '</select></div>'
+    + '<div id="pest-result" style="display:none;margin-top:12px;"></div>'
+    + '<div class="form-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>'
+    + '<button class="btn btn-primary" id="pest-submit-btn" onclick="submitPestHelper()">🔍 Identify Problem</button>'
+    + '</div>';
+  window._pestDesignation = designation;
+  window._pestVarietyName = varietyName;
+  openModal('🐛 Pest & Disease Helper — ' + varietyName, html);
+}
+
+
+async function submitPestHelper() {
+  var designation = window._pestDesignation;
+  var varietyName = window._pestVarietyName;
+  const description = document.getElementById('pest-description').value.trim();
+  const location = document.getElementById('pest-location').value;
+  const result = document.getElementById('pest-result');
+  if (!description) { alert('Please describe what you are seeing'); return; }
+
+  const btn = event.target;
+  btn.textContent = '⏳ Analyzing...';
+  btn.disabled = true;
+  result.style.display = 'none';
+
+  const prompt = 'I am growing ' + varietyName + ' and I am seeing the following on the ' + location + ': ' + description + '. Please identify the most likely pest or disease and provide treatment options. Respond with JSON only, no markdown. Use this structure: {"problem":"name of pest or disease","confidence":"High/Medium/Low","description":"brief description of the problem","organic_treatment":"organic treatment options","chemical_treatment":"chemical treatment if needed","prevention":"how to prevent in future","urgent":true/false}';
+
+  try {
+    const response = await api('/api/ai/query', 'POST', { prompt });
+    if (!response.response) throw new Error('No response');
+    const clean = response.response.replace(/[`]{3}json|[`]{3}/g, '').trim();
+    const data = JSON.parse(clean);
+
+    result.style.display = 'block';
+    result.innerHTML = '<div style="background:var(--green-bg);border-radius:8px;padding:12px;">'
+      + (data.urgent ? '<div style="color:#ef4444;font-weight:700;margin-bottom:8px;">⚠️ Act quickly — this problem can spread fast</div>' : '')
+      + '<div style="font-size:1rem;font-weight:700;margin-bottom:4px;">' + data.problem + ' <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">(' + data.confidence + ' confidence)</span></div>'
+      + '<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">' + data.description + '</div>'
+      + '<div style="font-size:0.85rem;margin-bottom:6px;"><span style="color:#22c55e;font-weight:600;">🌿 Organic:</span> ' + data.organic_treatment + '</div>'
+      + (data.chemical_treatment ? '<div style="font-size:0.85rem;margin-bottom:6px;"><span style="color:#f59e0b;font-weight:600;">⚗️ Chemical:</span> ' + data.chemical_treatment + '</div>' : '')
+      + '<div style="font-size:0.85rem;"><span style="color:var(--green-mid);font-weight:600;">🛡️ Prevention:</span> ' + data.prevention + '</div>'
+      + '</div>';
+  } catch(err) {
+    result.style.display = 'block';
+    result.innerHTML = '<div style="color:#ef4444;">❌ Could not identify problem: ' + err.message + '</div>';
+  }
+
+  btn.textContent = '🔍 Identify Problem';
+  btn.disabled = false;
 }
 
 function toggleAIKeyField() {
