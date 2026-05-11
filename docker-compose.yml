@@ -5,9 +5,9 @@ services:
     environment:
       POSTGRES_DB: seedvault
       POSTGRES_USER: seedvault
-      POSTGRES_PASSWORD: seedvault2024
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-seedvault2024}
     volumes:
-      - /mnt/ssd-apps/seedvault/postgres:/var/lib/postgresql/data
+      - seedvault_db:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U seedvault"]
       interval: 10s
@@ -15,14 +15,24 @@ services:
       retries: 5
 
   app:
-    image: seedvault:latest
+    image: duhato/seedvault:latest
     restart: unless-stopped
     ports:
-      - "8765:3000"
-    env_file:
-      - /mnt/ssd-apps/seedvault/app/.env
+      - "${PORT:-8765}:3000"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: seedvault
+      DB_USER: seedvault
+      DB_PASSWORD: ${DB_PASSWORD:-seedvault2024}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string}
+      PORT: 3000
     volumes:
-      - /mnt/ssd-apps/seedvault/uploads:/app/uploads
+      - seedvault_uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
+
+volumes:
+  seedvault_db:
+  seedvault_uploads:
