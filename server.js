@@ -1104,11 +1104,11 @@ app.post('/api/ai/test', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/ai/query', authMiddleware, async (req, res) => {
-  const { prompt } = req.body;
+  const { prompt, image, imageMime } = req.body;
   try {
     const settings = await getAISettings(req.user.id);
     if (!settings.provider) return res.json({ error: 'No AI provider configured' });
-    const response = await queryAIProvider(settings.provider, settings.key, settings.ollamaUrl, prompt);
+    const response = await queryAIProvider(settings.provider, settings.key, settings.ollamaUrl, prompt, image, imageMime);
     res.json({ response });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1126,14 +1126,18 @@ async function testAIProvider(provider, key, ollamaUrl) {
   return await queryAIProvider(provider, key, ollamaUrl, 'Say "SeedVault AI ready" and nothing else.');
 }
 
-async function queryAIProvider(provider, key, ollamaUrl, prompt) {
+async function queryAIProvider(provider, key, ollamaUrl, prompt, image, imageMime) {
   const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 
   if (provider === 'gemini') {
+    const parts = [{ text: prompt }];
+    if (image) {
+      parts.unshift({ inline_data: { mime_type: imageMime || 'image/jpeg', data: image } });
+    }
     const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=' + key, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      body: JSON.stringify({ contents: [{ parts }] })
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error.message);
@@ -1141,10 +1145,13 @@ async function queryAIProvider(provider, key, ollamaUrl, prompt) {
   }
 
   if (provider === 'openai') {
+    const msgContent = image
+      ? [{ type: 'image_url', image_url: { url: 'data:' + (imageMime || 'image/jpeg') + ';base64,' + image } }, { type: 'text', text: prompt }]
+      : prompt;
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], max_tokens: 1000 })
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: msgContent }], max_tokens: 1000 })
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error.message);
@@ -1152,10 +1159,13 @@ async function queryAIProvider(provider, key, ollamaUrl, prompt) {
   }
 
   if (provider === 'claude') {
+    const msgContent = image
+      ? [{ type: 'image', source: { type: 'base64', media_type: imageMime || 'image/jpeg', data: image } }, { type: 'text', text: prompt }]
+      : prompt;
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1000, messages: [{ role: 'user', content: msgContent }] })
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error.message || JSON.stringify(d.error));

@@ -4354,6 +4354,7 @@ async function lookupGrowingInfo(btn) {
     });
     previewHtml += '</div>';
     if (data.notes) previewHtml += '<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">💡 ' + data.notes + '</div>';
+    previewHtml += '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;">⚠️ AI-generated info may not be exact for your specific variety. Always verify days to germination and harvest against your seed packet or supplier.</div>';
     window._aiGrowingData = data;
     previewHtml += '<div style="display:flex;gap:8px;">'
       + '<button class="btn btn-primary btn-sm" onclick="applyGrowingInfo()">✅ Apply to Empty Fields</button>'
@@ -4405,9 +4406,10 @@ function applyGrowingInfo() {
 
 function showPestHelper(designation, varietyName) {
   if (!state.settings.ai_provider) return;
-  var html = '<div class="alert alert-info" style="font-size:0.85rem;">Describe what you are seeing on your plant and AI will help identify the problem and suggest treatment.</div>'
+  var supportsVision = ['gemini', 'openai', 'claude'].includes(state.settings.ai_provider);
+  var html = '<div class="alert alert-info" style="font-size:0.85rem;">Describe what you are seeing on your plant. ' + (supportsVision ? 'You can also upload a photo for better accuracy.' : '') + '</div>'
     + '<div class="form-group"><label class="form-label">What are you seeing?</label>'
-    + '<textarea class="form-control" id="pest-description" rows="4" placeholder="e.g. Yellow spots on leaves, white powder on stems, holes in leaves, wilting despite watering..."></textarea></div>'
+    + '<textarea class="form-control" id="pest-description" rows="3" placeholder="e.g. Yellow spots on leaves, white powder on stems, holes in leaves, wilting despite watering..."></textarea></div>'
     + '<div class="form-group"><label class="form-label">Where on the plant?</label>'
     + '<select class="form-control" id="pest-location">'
     + '<option value="leaves">Leaves</option>'
@@ -4416,6 +4418,10 @@ function showPestHelper(designation, varietyName) {
     + '<option value="fruit">Fruit</option>'
     + '<option value="whole plant">Whole plant</option>'
     + '</select></div>'
+    + (supportsVision ? '<div class="form-group"><label class="form-label">📷 Photo (optional — helps AI identify the problem)</label>'
+    + '<input type="file" class="form-control" id="pest-photo" accept="image/*">'
+    + '<div id="pest-photo-preview" style="margin-top:8px;display:none;"><img id="pest-photo-img" style="max-width:100%;max-height:200px;border-radius:8px;border:2px solid var(--border);"></div>'
+    + '</div>' : '')
     + '<div id="pest-result" style="display:none;margin-top:12px;"></div>'
     + '<div class="form-actions">'
     + '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>'
@@ -4424,6 +4430,26 @@ function showPestHelper(designation, varietyName) {
   window._pestDesignation = designation;
   window._pestVarietyName = varietyName;
   openModal('🐛 Pest & Disease Helper — ' + varietyName, html);
+  // Add photo preview listener after modal opens
+  setTimeout(function() {
+    var photoInput = document.getElementById('pest-photo');
+    if (photoInput) {
+      photoInput.addEventListener('change', function() {
+        var file = this.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('pest-photo-img').src = e.target.result;
+          document.getElementById('pest-photo-preview').style.display = 'block';
+          window._pestPhotoBase64 = e.target.result.split(',')[1];
+          window._pestPhotoMime = file.type;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  }, 100);
+  window._pestPhotoBase64 = null;
+  window._pestPhotoMime = null;
 }
 
 
@@ -4433,7 +4459,7 @@ async function submitPestHelper() {
   const description = document.getElementById('pest-description').value.trim();
   const location = document.getElementById('pest-location').value;
   const result = document.getElementById('pest-result');
-  if (!description) { alert('Please describe what you are seeing'); return; }
+  if (!description && !window._pestPhotoBase64) { alert('Please describe what you are seeing or upload a photo'); return; }
 
   const btn = event.target;
   btn.textContent = '⏳ Analyzing...';
@@ -4455,7 +4481,8 @@ async function submitPestHelper() {
       + '<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">' + data.description + '</div>'
       + '<div style="font-size:0.85rem;margin-bottom:6px;"><span style="color:#22c55e;font-weight:600;">🌿 Organic:</span> ' + data.organic_treatment + '</div>'
       + (data.chemical_treatment ? '<div style="font-size:0.85rem;margin-bottom:6px;"><span style="color:#f59e0b;font-weight:600;">⚗️ Chemical:</span> ' + data.chemical_treatment + '</div>' : '')
-      + '<div style="font-size:0.85rem;"><span style="color:var(--green-mid);font-weight:600;">🛡️ Prevention:</span> ' + data.prevention + '</div>'
+      + '<div style="font-size:0.85rem;margin-bottom:10px;"><span style="color:var(--green-mid);font-weight:600;">🛡️ Prevention:</span> ' + data.prevention + '</div>'
+      + '<div style="font-size:0.75rem;color:var(--text-muted);border-top:1px solid var(--border);padding-top:8px;">⚠️ AI suggestions may not always be accurate. When in doubt consult your local extension office or a plant disease specialist before applying any treatment.</div>'
       + '</div>';
   } catch(err) {
     result.style.display = 'block';
