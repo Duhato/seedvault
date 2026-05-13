@@ -1,6 +1,32 @@
 # Changelog
 All notable changes to SeedVault will be documented here.
 
+## [1.3.0] - 2026-05-12
+### Added
+- AI Assistant integration — connect Google Gemini, OpenAI ChatGPT, Anthropic Claude, or Ollama (local/free)
+- Growing info lookup on seed lots — AI fills in empty planting depth, spacing, days to germinate/harvest, sun, water, frost tolerance
+- Companion planting AI fallback — unknown crops automatically looked up via AI if no builtin data
+- Pest & Disease Helper on plants — describe symptoms or upload a photo, AI identifies problem and suggests organic and chemical treatments
+- Photo upload support in pest helper — Gemini, OpenAI, and Claude can analyze plant photos
+- AI disclaimers on all AI features — reminders to verify AI suggestions
+- Season Planner — AI generates 8-week planting plan based on your frost dates, location, and seed vault
+- Harvest Analysis — AI reviews harvest log and recommends best plants for seed saving
+- Reports page — dedicated nav page for all print reports and AI features
+- Seed Resources page — 12 seed exchanges and references with clickable cards
+- Detailed install guides for Windows, Linux, and Raspberry Pi in /docs folder
+- Remote access guide — Tailscale, Cloudflare Tunnel, port forwarding + DuckDNS, ZeroTier
+- GitHub Issues templates — bug report, feature request, question
+- Contributing guide (CONTRIBUTING.md)
+- Companion planting expanded to flowers and herbs — marigolds, nasturtiums, borage, sunflowers, chamomile, zinnias, calendula, basil, dill, cilantro, parsley, chives, rosemary, sage, thyme, mint
+- Companion card expand on click — how to plant, distance, timing details
+- GDD per-crop base temps — carrots, lettuce, spinach, peas, onions now use 40°F base
+- Backup reminder banner — orange if never backed up, yellow at 7 days, red at 14 days
+- One-line Docker install — single curl command
+### Fixed
+- Backup export missing weather_logs and frost_events
+- Backup reminder not clearing after export
+- Nav wraps to second row instead of scrollbar
+
 ## [1.2.3] - 2026-05-10
 ### Fixed
 - ZIP and JSON export failing due to wrong table name (weather_logs vs weather_log)

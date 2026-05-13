@@ -216,6 +216,7 @@ function render() {
     case 'amendments': main.innerHTML = renderAmendments(); break;
     case 'weather': main.innerHTML = renderWeather(); break;
     case 'resources': main.innerHTML = renderResources(); break;
+    case 'reports': main.innerHTML = renderReports(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
   }
 }
@@ -4045,6 +4046,24 @@ async function submitFrostEvent() {
   alert('✅ Frost event recorded! If confirmed, your frost date settings have been updated.');
 }
 
+function renderReports() {
+  return '<div class="page-header"><h1 class="page-title">📊 Reports</h1></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+    + '<div class="card">'
+    + '<div class="card-title">🖨️ Print Reports</div>'
+    + '<div class="settings-row"><div class="settings-row-info"><h4>Seed Inventory</h4><p>Full inventory of all seed lots with quantities and viability.</p></div><button class="btn btn-primary" onclick="printInventoryReport()">🖨️ Print</button></div>'
+    + '<div class="settings-row"><div class="settings-row-info"><h4>Variety Performance</h4><p>Compare germination rates and harvest counts by variety.</p></div><button class="btn btn-secondary" onclick="printVarietyReport()">🖨️ Print</button></div>'
+    + '<div class="settings-row"><div class="settings-row-info"><h4>Season Comparison</h4><p>Compare variety performance across multiple seasons.</p></div><button class="btn btn-secondary" onclick="printSeasonComparisonReport()">🖨️ Print</button></div>'
+    + '<div class="settings-row"><div class="settings-row-info"><h4>Season Summary</h4><p>Full season overview for printing.</p></div><button class="btn btn-secondary" onclick="printSeasonSummary()">🖨️ Print</button></div>'
+    + '</div>'
+    + (state.settings.ai_provider ? '<div class="card">'
+    + '<div class="card-title">✨ AI Features</div>'
+    + '<div class="settings-row"><div class="settings-row-info"><h4>Season Planner</h4><p>Get AI suggestions on what to start, transplant, and harvest based on your frost dates and seed vault.</p></div><button class="btn btn-secondary" onclick="showSeasonPlanner()">✨ Plan My Season</button></div>'
+    + '<div class="settings-row"><div class="settings-row-info"><h4>Harvest Analysis</h4><p>AI reviews your harvest log and suggests which plants are best candidates for seed saving.</p></div><button class="btn btn-secondary" onclick="showHarvestAnalysis()">✨ Analyse Harvests</button></div>'
+    + '</div>' : '<div class="card"><div class="card-title">✨ AI Features</div><div style="color:var(--text-muted);font-size:0.85rem;padding:8px 0;">Add an AI provider in Settings to unlock season planning and harvest analysis.</div></div>')
+    + '</div>';
+}
+
 function openResource(el) {
   var url = el.getAttribute('data-url');
   if (url) window.open(url, '_blank');
@@ -4238,7 +4257,7 @@ function renderSettings() {
     </div>
     <div class="card">
       <div class="settings-section-title">ℹ️ About SeedVault</div>
-      <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.2.3</p></div></div>
+      <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>SeedVault v1.3.0</p></div></div>
       <div class="settings-row"><div class="settings-row-info"><h4>Database Records</h4><p>${state.stats.varieties || 0} varieties · ${state.stats.seedLots || 0} seed lots · ${state.stats.activePlants || 0} plants this season · ${state.germination.length} germination tests · ${state.harvest.length} harvest records · ${state.amendments.length} amendments</p></div></div>
       <div class="settings-row"><div class="settings-row-info"><h4>Photos</h4><p>${state.plants.filter(p => p.photo_path).length} plant photos · ${state.seedLots.filter(l => l.packet_front_path || l.packet_back_path).length} seed packets with photos</p></div></div>
       <div class="settings-row">
