@@ -4296,6 +4296,7 @@ function renderSettings() {
         <div class="settings-row-info"><h4>Season Comparison Report</h4><p>Compare how each variety performed across multiple seasons — germination, harvest counts, seed saves.</p></div>
         <button class="btn btn-secondary" onclick="printSeasonComparisonReport()">🖨️ Print Report</button>
       </div>
+      ${state.settings.ai_provider ? '<div class="settings-section-title">✨ AI Features</div><div class="settings-row"><div class="settings-row-info"><h4>Season Planner</h4><p>Get AI suggestions on what to start, transplant, and harvest based on your frost dates and seed vault.</p></div><button class="btn btn-secondary" onclick="showSeasonPlanner()">✨ Plan My Season</button></div><div class="settings-row"><div class="settings-row-info"><h4>Harvest Analysis</h4><p>AI reviews your harvest log and suggests which plants are best candidates for seed saving.</p></div><button class="btn btn-secondary" onclick="showHarvestAnalysis()">✨ Analyse Harvests</button></div>' : ''}
     </div>
   `;
 }
@@ -4317,7 +4318,7 @@ async function lookupGrowingInfo(btn) {
 
     let data;
     try {
-      const clean = result.response.replace(/```json|```/g, '').trim();
+      const clean = stripJsonFences(result.response);
       data = JSON.parse(clean);
     } catch(e) { throw new Error('Could not parse AI response'); }
 
@@ -4471,7 +4472,7 @@ async function submitPestHelper() {
   try {
     const response = await api('/api/ai/query', 'POST', { prompt });
     if (!response.response) throw new Error('No response');
-    const clean = response.response.replace(/[`]{3}json|[`]{3}/g, '').trim();
+    const clean = stripJsonFences(response.response);
     const data = JSON.parse(clean);
 
     result.style.display = 'block';
@@ -4576,6 +4577,11 @@ async function testAIConnection() {
   }
 }
 
+function stripJsonFences(str) {
+  if (!str) return '';
+  return str.replace(/^[\s\S]*?({[\s\S]*})[\s\S]*$/, '$1').trim();
+}
+
 // Main AI query function — used by all AI features
 async function queryAI(prompt) {
   if (!state.settings.ai_provider) return null;
@@ -4585,6 +4591,108 @@ async function queryAI(prompt) {
     return result.response;
   } catch (err) {
     return null;
+  }
+}
+
+async function showSeasonPlanner() {
+  if (!state.settings.ai_provider) return;
+  openModal('✨ Season Planner', '<div style="text-align:center;padding:32px;"><div style="font-size:2rem;margin-bottom:12px;">🌱</div><div>Building your season plan...</div></div>');
+
+  const lastFrost = state.settings.last_frost_date || 'unknown';
+  const firstFrost = state.settings.first_frost_date || 'unknown';
+  const location = state.settings.location_name || 'unknown location';
+  const varieties = state.varieties.map(function(v) { return v.name + ' (' + v.species_code + ')'; }).join(', ');
+  const seedLots = state.seedLots.filter(function(l) { return l.quantity_estimate > 0 || l.quantity_weight > 0; }).map(function(l) { return l.variety_name || l.variety_code; }).join(', ');
+  const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+  const prompt = 'I am a home gardener in ' + location + '. Today is ' + today + '. My last spring frost date is ' + lastFrost + ' and first fall frost is ' + firstFrost + '. I grow these varieties: ' + (varieties || 'various vegetables') + '. I currently have seeds for: ' + (seedLots || 'various vegetables') + '. Give me a practical season planting plan for the next 8 weeks. Respond with JSON only, no markdown. Use this structure: {"summary":"2-3 sentence overview","weeks":[{"week":"Week 1 (dates)","start_indoors":["list of what to start indoors"],"direct_sow":["list of what to direct sow"],"transplant":["list of what to transplant out"],"harvest":["list of what may be ready"],"tasks":["other important tasks"]}],"tips":"2-3 important tips for this time of year"}. Include 8 weeks. Keep each list concise.';
+
+  try {
+    const response = await api('/api/ai/query', 'POST', { prompt });
+    if (!response.response) throw new Error('No response');
+    const clean = stripJsonFences(response.response);
+    const data = JSON.parse(clean);
+
+    var html = '<div style="background:var(--green-bg);border-radius:8px;padding:12px;margin-bottom:16px;font-size:0.85rem;">' + data.summary + '</div>';
+
+    data.weeks.forEach(function(w) {
+      html += '<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;">';
+      html += '<div style="font-weight:700;margin-bottom:8px;color:var(--green-mid);">' + w.week + '</div>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.82rem;">';
+      if (w.start_indoors && w.start_indoors.length) html += '<div><div style="font-weight:600;color:#22c55e;">🌱 Start Indoors</div>' + w.start_indoors.map(function(x) { return '<div>' + x + '</div>'; }).join('') + '</div>';
+      if (w.direct_sow && w.direct_sow.length) html += '<div><div style="font-weight:600;color:#22c55e;">🌿 Direct Sow</div>' + w.direct_sow.map(function(x) { return '<div>' + x + '</div>'; }).join('') + '</div>';
+      if (w.transplant && w.transplant.length) html += '<div><div style="font-weight:600;color:#f59e0b;">🪴 Transplant</div>' + w.transplant.map(function(x) { return '<div>' + x + '</div>'; }).join('') + '</div>';
+      if (w.harvest && w.harvest.length) html += '<div><div style="font-weight:600;color:#f97316;">🍅 Harvest</div>' + w.harvest.map(function(x) { return '<div>' + x + '</div>'; }).join('') + '</div>';
+      if (w.tasks && w.tasks.length) html += '<div style="grid-column:span 2;"><div style="font-weight:600;color:var(--text-muted);">📋 Tasks</div>' + w.tasks.map(function(x) { return '<div>' + x + '</div>'; }).join('') + '</div>';
+      html += '</div></div>';
+    });
+
+    if (data.tips) html += '<div style="background:var(--green-bg);border-radius:8px;padding:12px;font-size:0.82rem;color:var(--text-muted);">💡 ' + data.tips + '</div>';
+    html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">⚠️ AI suggestions are based on your frost dates and location. Always check local conditions before planting.</div>';
+    html += '<div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>';
+
+    const modal = document.querySelector('.modal-body') || document.querySelector('.modal-content');
+    if (modal) modal.innerHTML = html;
+  } catch(err) {
+    const modal = document.querySelector('.modal-body') || document.querySelector('.modal-content');
+    if (modal) modal.innerHTML = '<div style="color:#ef4444;padding:16px;">❌ Could not generate plan: ' + err.message + '</div><div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>';
+  }
+}
+
+async function showHarvestAnalysis() {
+  if (!state.settings.ai_provider) return;
+  if (!state.harvest || state.harvest.length === 0) {
+    alert('No harvest data yet. Log some harvests first and come back!');
+    return;
+  }
+  openModal('✨ Harvest Analysis', '<div style="text-align:center;padding:32px;"><div style="font-size:2rem;margin-bottom:12px;">🍅</div><div>Analysing your harvest data...</div></div>');
+
+  var harvestSummary = state.harvest.slice(0, 30).map(function(h) {
+    return h.plant_designation + ': ' + (h.fruit_weight_oz ? h.fruit_weight_oz + 'oz' : '') + ' ' + (h.seed_count ? h.seed_count + ' seeds' : '') + ' condition:' + (h.condition || 'unknown');
+  }).join('; ');
+
+  var plants = state.plants.filter(function(p) { return p.selected_for_seed; }).map(function(p) { return p.designation; }).join(', ');
+
+  const prompt = 'I am a seed saver. Here is my harvest log data: ' + harvestSummary + '. Plants already selected for seed saving: ' + (plants || 'none yet') + '. Based on this data, which plants look like the best candidates for seed saving and why? Also flag any concerns. Respond with JSON only, no markdown. Use this structure: {"summary":"overall assessment","top_candidates":[{"plant":"designation","reason":"why its a good seed saver","score":"Excellent/Good/Fair"}],"concerns":[{"plant":"designation","issue":"what to watch"}],"general_tips":"seed saving advice based on this harvest data"}';
+
+  try {
+    const response = await api('/api/ai/query', 'POST', { prompt });
+    if (!response.response) throw new Error('No response');
+    const clean = stripJsonFences(response.response);
+    const data = JSON.parse(clean);
+
+    var html = '<div style="background:var(--green-bg);border-radius:8px;padding:12px;margin-bottom:16px;font-size:0.85rem;">' + data.summary + '</div>';
+
+    if (data.top_candidates && data.top_candidates.length) {
+      html += '<div style="font-weight:700;color:#22c55e;margin-bottom:8px;">⭐ Top Seed Saving Candidates</div>';
+      data.top_candidates.forEach(function(c) {
+        var scoreColor = c.score === 'Excellent' ? '#22c55e' : c.score === 'Good' ? '#f59e0b' : 'var(--text-muted)';
+        html += '<div style="padding:10px;background:var(--green-bg);border-radius:6px;margin-bottom:6px;border-left:3px solid ' + scoreColor + ';">'
+          + '<div style="font-weight:600;font-size:0.85rem;">' + c.plant + ' <span style="color:' + scoreColor + ';font-size:0.75rem;">(' + c.score + ')</span></div>'
+          + '<div style="font-size:0.8rem;color:var(--text-muted);">' + c.reason + '</div>'
+          + '</div>';
+      });
+    }
+
+    if (data.concerns && data.concerns.length) {
+      html += '<div style="font-weight:700;color:#f59e0b;margin:12px 0 8px;">⚠️ Concerns</div>';
+      data.concerns.forEach(function(c) {
+        html += '<div style="padding:8px;background:var(--green-bg);border-radius:6px;margin-bottom:4px;border-left:3px solid #f59e0b;">'
+          + '<div style="font-weight:600;font-size:0.85rem;">' + c.plant + '</div>'
+          + '<div style="font-size:0.8rem;color:var(--text-muted);">' + c.issue + '</div>'
+          + '</div>';
+      });
+    }
+
+    if (data.general_tips) html += '<div style="background:var(--green-bg);border-radius:8px;padding:12px;font-size:0.82rem;color:var(--text-muted);margin-top:12px;">💡 ' + data.general_tips + '</div>';
+    html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">⚠️ AI analysis is based on your logged harvest data. Use your own judgement when selecting plants for seed saving.</div>';
+    html += '<div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>';
+
+    const modal = document.querySelector('.modal-body') || document.querySelector('.modal-content');
+    if (modal) modal.innerHTML = html;
+  } catch(err) {
+    const modal = document.querySelector('.modal-body') || document.querySelector('.modal-content');
+    if (modal) modal.innerHTML = '<div style="color:#ef4444;padding:16px;">❌ Could not analyse harvests: ' + err.message + '</div><div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>';
   }
 }
 

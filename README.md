@@ -32,6 +32,15 @@ Available tags: `latest`, `1.2.0`, `1.1.1`, `1.1.0`
 
 Multi-arch: **AMD64** and **ARM64** (Raspberry Pi)
 
+## Remote Access
+
+Access SeedVault from anywhere — phone, tablet, away from home. See the [Remote Access Guide](docs/remote-access.md) for detailed setup instructions for:
+
+- **Tailscale** — easiest, free, no port forwarding needed
+- **Cloudflare Tunnel** — free with a domain, gives a real URL
+- **Port Forwarding + DuckDNS** — free, no extra accounts
+- **ZeroTier** — free VPN alternative to Tailscale
+
 ## Installation Guides
 
 Detailed step-by-step guides for every platform:
@@ -86,6 +95,15 @@ docker pull duhato/seedvault:latest
 Available tags: `latest`, `1.2.0`, `1.1.1`, `1.1.0`
 
 Multi-arch: **AMD64** and **ARM64** (Raspberry Pi)
+
+## Remote Access
+
+Access SeedVault from anywhere — phone, tablet, away from home. See the [Remote Access Guide](docs/remote-access.md) for detailed setup instructions for:
+
+- **Tailscale** — easiest, free, no port forwarding needed
+- **Cloudflare Tunnel** — free with a domain, gives a real URL
+- **Port Forwarding + DuckDNS** — free, no extra accounts
+- **ZeroTier** — free VPN alternative to Tailscale
 
 ## Installation Guides
 
