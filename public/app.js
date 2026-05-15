@@ -124,6 +124,17 @@ const BUILTIN_COMPANIONS = {
   'SAGE': { good: [{name:'Brassicas',icon:'🥦',reason:'Deters cabbage moths, whiteflies, and aphids'},{name:'Carrots',icon:'🥕',reason:'Repels carrot fly'},{name:'Tomatoes',icon:'🍅',reason:'Deters flea beetles'},{name:'Strawberries',icon:'🍓',reason:'Improves flavor and growth'}], bad: [{name:'Cucumbers',icon:'🥒',reason:'Inhibits cucumber growth'},{name:'Onions',icon:'🧅',reason:'Compete and inhibit each other'},{name:'Basil',icon:'🌿',reason:'Inhibit each other when too close'}], tips: 'Sage is a perennial that gets woody with age — cut back hard in spring. Extremely effective against cabbage family pests.' },
   'THYM': { good: [{name:'Brassicas',icon:'🥦',reason:'Repels cabbage worms and whiteflies'},{name:'Tomatoes',icon:'🍅',reason:'Deters tomato hornworm'},{name:'Eggplant',icon:'🍆',reason:'Repels flea beetles'},{name:'Strawberries',icon:'🍓',reason:'Improves vigor and flavor'}], bad: [{name:'None known',icon:'✅',reason:'Thyme is broadly beneficial to most vegetables'}], tips: 'Thyme is a low-growing perennial that works well as ground cover between taller plants. Excellent pollinator attractor when in flower.' },
   'MINT': { good: [{name:'Brassicas',icon:'🥦',reason:'Strongly repels cabbage moths and aphids'},{name:'Tomatoes',icon:'🍅',reason:'Repels aphids and flea beetles'},{name:'Peas',icon:'🫛',reason:'Repels aphids'},{name:'Carrots',icon:'🥕',reason:'Repels carrot fly'}], bad: [{name:'Parsley',icon:'🌿',reason:'Mint aggressively outcompetes parsley'},{name:'Chamomile',icon:'🌼',reason:'Mint can overwhelm chamomile'}], tips: 'Mint is extremely aggressive — always grow in containers or with a root barrier buried 12 inches deep. Spearmint and peppermint are most potent for pest repelling.' },
+  'LAVN': { good: [{name:'Brassicas',icon:'🥦',reason:'Repels moths and cabbage worms',how:'Plant as a border around brassica beds.',distance:'12-18 inches from bed edge',timing:'Establish before planting brassicas'},{name:'Tomatoes',icon:'🍅',reason:'Repels whiteflies and moths',how:'Plant at corners and edges of tomato beds.',distance:'18 inches from tomatoes',timing:'Plant at same time'},{name:'Carrots',icon:'🥕',reason:'Repels carrot fly',how:'Plant along carrot row edges.',distance:'12 inches from rows',timing:'Establish before sowing carrots'},{name:'Most vegetables',icon:'🥦',reason:'Repels fleas, flies, and mosquitoes',how:'Plant throughout garden as a general deterrent.',distance:'18 inches apart',timing:'Establish early in season'}], bad: [{name:'None known',icon:'✅',reason:'Lavender is broadly beneficial and non-invasive'}], tips: 'Lavender is one of the most versatile pest-repelling plants. Its strong scent confuses and deters moths, flies, fleas, and mosquitoes. Drought tolerant once established. Not hardy below zone 5 — grow in pots to bring indoors in cold climates.' },
+  'CHRYS': { good: [{name:'Most vegetables',icon:'🥦',reason:'Contains natural pyrethrum that repels many insects',how:'Plant as a border around the entire garden.',distance:'12-18 inches apart',timing:'Plant in spring after last frost'},{name:'Brassicas',icon:'🥦',reason:'Repels ants, ticks, and cabbage pests',how:'Plant between brassica rows.',distance:'12 inches from plants',timing:'Plant at same time as brassicas'}], bad: [{name:'None known',icon:'✅',reason:'Generally beneficial but note warning below'}], tips: '⚠️ Chrysanthemums contain pyrethrum — a natural insecticide that repels ants, roaches, ticks, silverfish, fleas, and lice. However pyrethrum can also deter beneficial insects. Plant sparingly and avoid planting near flowering plants where you need pollinators. Best used as a border plant away from flowering vegetables.' },
+  'GARL': { good: [{name:'Tomatoes',icon:'🍅',reason:'Repels spider mites, aphids, and Japanese beetles',how:'Plant garlic cloves between tomato plants in fall, or interplant established garlic.',distance:'6 inches from tomato stems',timing:'Plant in fall for spring tomatoes'},{name:'Roses',icon:'🌹',reason:'Classic pairing — repels aphids and black spot',how:'Plant garlic around the base of rose bushes.',distance:'6 inches from rose base',timing:'Plant in fall'},{name:'Brassicas',icon:'🥦',reason:'Repels cabbage moths and aphids',how:'Interplant between brassicas.',distance:'6 inches apart',timing:'Plant in fall or early spring'},{name:'Fruit trees',icon:'🍎',reason:'Repels borers and aphids',how:'Plant around the drip line of fruit trees.',distance:'12 inches from trunk',timing:'Plant in fall'},{name:'Carrots',icon:'🥕',reason:'Repels carrot fly',how:'Alternate rows of garlic and carrots.',distance:'Alternate rows',timing:'Plant at same time'}], bad: [{name:'Beans',icon:'🫘',reason:'Garlic inhibits bean growth'},{name:'Peas',icon:'🫛',reason:'Garlic inhibits pea growth'},{name:'Asparagus',icon:'🌱',reason:'Compete and inhibit each other'}], tips: 'Garlic is one of the most powerful pest repellents in the garden. Its sulfur compounds deter a wide range of insects and fungal diseases. Plant in fall for best results — it overwinters and is ready in early summer. Hardneck varieties are better for cold climates.' },
+  'CATN': { good: [{name:'Brassicas',icon:'🥦',reason:'Repels flea beetles, cabbage loopers, and aphids',how:'Plant as a border around brassica beds.',distance:'12 inches from bed edge',timing:'Establish before planting brassicas'},{name:'Eggplant',icon:'🍆',reason:'Strongly repels flea beetles that devastate eggplant',how:'Plant catnip around eggplant — it is one of the best flea beetle deterrents.',distance:'12 inches from plants',timing:'Plant at same time'},{name:'Squash',icon:'🎃',reason:'Repels squash bugs',how:'Plant at corners of squash beds.',distance:'18 inches from squash hills',timing:'Establish before squash'},{name:'Beans',icon:'🫘',reason:'Repels Colorado potato beetles and Mexican bean beetles',how:'Interplant throughout bean rows.',distance:'12 inches apart',timing:'Plant at same time'}], bad: [{name:'None known',icon:'✅',reason:'Catnip is broadly beneficial — just watch for cats rolling in it!'}], tips: 'Catnip is one of the most effective flea beetle repellents — even more effective than DEET for mosquitoes in some studies. Grow in containers to prevent spreading. Be aware cats are strongly attracted to it and may damage nearby plants rolling in it.' },
+  'YARR': { good: [{name:'Most vegetables',icon:'🥦',reason:'Attracts beneficial wasps, hoverflies, and ladybugs that eat pests',how:'Plant in clumps throughout the garden — let it flower for maximum benefit.',distance:'18 inches apart',timing:'Plant in spring'},{name:'Tomatoes',icon:'🍅',reason:'Attracts predatory insects that control tomato pests',how:'Plant at the ends of tomato rows.',distance:'18 inches from tomatoes',timing:'Plant at same time'},{name:'Aromatic herbs',icon:'🌿',reason:'Improves essential oil production in nearby herbs',how:'Plant near herbs like thyme and sage.',distance:'12 inches apart',timing:'Plant together'}], bad: [{name:'None known',icon:'✅',reason:'Yarrow is broadly beneficial to most plants'}], tips: 'Yarrow attracts an enormous number of beneficial insects — predatory wasps, hoverflies, ladybugs, and lacewings — that feed on garden pests. Repels ants, flies, and some beetles. Its flat-topped flowers are easy for beneficial insects to land on. Drought tolerant and low maintenance.' },
+  'TANS': { good: [{name:'Brassicas',icon:'🥦',reason:'Repels cabbage worms, cutworms, and ants',how:'Plant as a border — do NOT plant in garden beds as it spreads aggressively.',distance:'Keep in containers or at garden edge',timing:'Establish before planting season'},{name:'Potatoes',icon:'🥔',reason:'Repels Colorado potato beetles',how:'Plant tansy in containers near potato beds.',distance:'12-18 inches from bed edge',timing:'Establish before potatoes emerge'},{name:'Fruit trees',icon:'🍎',reason:'Repels flying insects',how:'Plant around the drip line in containers.',distance:'In containers around the tree',timing:'Spring'}], bad: [{name:'None known',icon:'✅',reason:'Tansy repels pests but note the warning below'}], tips: '⚠️ Tansy is invasive — ALWAYS grow in containers. Never plant directly in garden beds or it will take over. It strongly repels ants, flies, moths, and many beetles. Some people have skin reactions to tansy — wear gloves when handling.' },
+  'WORM': { good: [{name:'Brassicas',icon:'🥦',reason:'Repels flea beetles and cabbage moths',how:'Plant at the garden edge — do not plant near most vegetables.',distance:'Keep at garden perimeter only',timing:'Establish at garden edge'},{name:'Fruit trees',icon:'🍎',reason:'Repels slugs and many flying insects',how:'Plant around the drip line, well away from vegetable beds.',distance:'3+ feet from vegetables',timing:'Spring'}], bad: [{name:'Most vegetables',icon:'🥦',reason:'Wormwood is strongly allelopathic — it inhibits growth of most plants'},{name:'Fennel',icon:'🌿',reason:'Both are allelopathic — keep far apart'},{name:'Beans',icon:'🫘',reason:'Wormwood strongly inhibits beans'}], tips: '⚠️ Wormwood is strongly allelopathic — it releases chemicals that inhibit the growth of most plants. Keep it well away from vegetable beds. Best used as a border plant at the garden perimeter. Effective at repelling flea beetles, slugs, and many flying insects.' },
+  'PETU': { good: [{name:'Beans',icon:'🫘',reason:'Repels bean beetles and protects from most pests',how:'Interplant petunias throughout bean rows.',distance:'12 inches apart',timing:'Plant at same time after frost'},{name:'Squash',icon:'🎃',reason:'Repels squash bugs and potato bugs',how:'Plant at corners and edges of squash beds.',distance:'12 inches from squash hills',timing:'Plant at same time'},{name:'Tomatoes',icon:'🍅',reason:'General pest deterrent, attracts pollinators',how:'Plant between tomato plants.',distance:'12-18 inches apart',timing:'Plant at same time'},{name:'Peppers',icon:'🫑',reason:'General pest deterrent',how:'Interplant throughout pepper bed.',distance:'12 inches apart',timing:'Plant at same time'}], bad: [{name:'None known',icon:'✅',reason:'Petunias are broadly beneficial pest deterrents'}], tips: 'Petunias are an underrated companion plant. They repel bean beetles, squash bugs, aphids, and tomato hornworms. Easy to grow from seed or transplant, bloom all season. Sticky stems also trap small insects physically. Great for pots and hanging baskets near garden beds.' },
+  'ALYS': { good: [{name:'Brassicas',icon:'🥦',reason:'Attracts hoverflies whose larvae devour aphids',how:'Sow alyssum seeds directly between brassica transplants.',distance:'6 inches apart as ground cover',timing:'Sow when transplanting brassicas'},{name:'Tomatoes',icon:'🍅',reason:'Attracts beneficial insects that control tomato pests',how:'Sow as a ground cover around tomato bed edges.',distance:'6 inches apart',timing:'Sow at same time as transplanting'},{name:'Lettuce',icon:'🥬',reason:'Attracts lacewings and parasitic wasps',how:'Interplant throughout lettuce beds.',distance:'6 inches apart',timing:'Sow at same time'},{name:'Most vegetables',icon:'🥦',reason:'One of the best attractors of aphid-eating hoverflies',how:'Sow liberally throughout all vegetable beds.',distance:'6 inches apart as living mulch',timing:'Sow throughout the season for continuous bloom'}], bad: [{name:'None known',icon:'✅',reason:'Sweet alyssum is broadly beneficial and non-invasive'}], tips: 'Sweet alyssum is one of the best plants for attracting beneficial insects — especially hoverflies whose larvae eat enormous numbers of aphids. Low growing, blooms all season, self-seeds readily. Honey-scented flowers attract a wide range of beneficial insects. Excellent as living mulch between taller plants.' },
+  'COSM': { good: [{name:'Tomatoes',icon:'🍅',reason:'Attracts parasitic wasps and beneficial insects',how:'Plant in clumps throughout and around the garden.',distance:'12-18 inches apart',timing:'Direct sow after last frost'},{name:'Brassicas',icon:'🥦',reason:'Attracts lacewings, hoverflies, and parasitic wasps',how:'Plant at the ends of brassica rows.',distance:'12 inches from bed edge',timing:'Sow at same time'},{name:'Most vegetables',icon:'🥦',reason:'Excellent pollinator attractor, attracts beneficial insects',how:'Scatter throughout the garden in any open spaces.',distance:'12-18 inches apart',timing:'Direct sow after last frost'}], bad: [{name:'None known',icon:'✅',reason:'Cosmos are broadly beneficial to all vegetables'}], tips: 'Cosmos are one of the easiest and most beneficial flowers you can add to a vegetable garden. They attract bumblebees, butterflies, hoverflies, and parasitic wasps. Let some go to seed for self-seeding next year. Tall varieties provide light shade for heat-sensitive crops.' },
+  'OREG': { good: [{name:'Brassicas',icon:'🥦',reason:'Repels cabbage moths and aphids',how:'Plant as a border or interplant throughout brassica beds.',distance:'12 inches apart',timing:'Establish before planting brassicas'},{name:'Cucumbers',icon:'🥒',reason:'Repels cucumber beetles',how:'Plant at the base of cucumber trellises.',distance:'12 inches from cucumbers',timing:'Plant at same time'},{name:'Squash',icon:'🎃',reason:'General pest deterrent, attracts pollinators when flowering',how:'Plant at corners of squash beds.',distance:'18 inches from squash hills',timing:'Plant at same time'},{name:'Peppers',icon:'🫑',reason:'Repels aphids and attracts beneficial insects',how:'Interplant throughout pepper bed.',distance:'12 inches apart',timing:'Plant at same time'}], bad: [{name:'None known',icon:'✅',reason:'Oregano is broadly beneficial to most vegetables'}], tips: 'Oregano is a low-growing perennial that works as ground cover between taller plants. When it flowers it attracts enormous numbers of beneficial insects. The strong scent deters many pests. Greek oregano is most pungent and most effective as a companion.' },
 };
 
 const state = {
@@ -578,6 +589,24 @@ function renderDashboard() {
         return '<div onclick="navigate(&quot;settings&quot;)" style="background:#92400e;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
           + '<span>💾 <strong>Backup reminder</strong> — last backup was ' + days + ' days ago</span>'
           + '<span style="font-size:0.85rem;opacity:0.85;">Back up now →</span>'
+          + '</div>';
+      }
+      return '';
+    })()}
+    ${(() => {
+      // Low seed quantity alerts
+      const lowSeeds = state.seedLots.filter(function(l) {
+        if (l.quantity_unit === 'seeds' || !l.quantity_unit) {
+          return l.quantity_estimate > 0 && l.quantity_estimate < 20;
+        }
+        if (l.quantity_unit === 'mg') return l.quantity_weight > 0 && l.quantity_weight < 100;
+        if (l.quantity_unit === 'g') return l.quantity_weight > 0 && l.quantity_weight < 1;
+        return false;
+      });
+      if (lowSeeds.length > 0) {
+        return '<div onclick="navigate(\"seedlots\")" style="background:#92400e;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>🌱 <strong>' + lowSeeds.length + ' seed lot' + (lowSeeds.length > 1 ? 's are' : ' is') + ' running low</strong> — ' + lowSeeds.slice(0,3).map(function(l) { return l.variety_name || l.designation; }).join(', ') + (lowSeeds.length > 3 ? ' and more' : '') + '</span>'
+          + '<span style="font-size:0.85rem;opacity:0.85;">View Seed Lots →</span>'
           + '</div>';
       }
       return '';
@@ -1264,9 +1293,9 @@ function renderSeedLots() {
         <tbody>${filteredLots.map(lot => {
           const maxYears = viabilityYears[lot.species_code] || 3;
           const yearsLeft = maxYears - (currentYear - lot.year_saved);
-          let viabilityBadge = '<span style="color:#22c55e;font-weight:600;">🟢 Good</span>';
+          let viabilityBadge = '<span style="color:#22c55e;font-weight:600;">🟢 ' + yearsLeft + ' yr' + (yearsLeft === 1 ? '' : 's') + ' left</span>';
           if (yearsLeft <= 0) viabilityBadge = '<span style="color:#ef4444;font-weight:600;">🔴 Expired</span>';
-          else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#f59e0b;font-weight:600;">🟡 Expiring</span>';
+          else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#f59e0b;font-weight:600;">🟡 ' + yearsLeft + ' yr left</span>';
           const qtyRaw = lot.quantity_unit === 'seeds' || !lot.quantity_unit
             ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—')
             : (lot.quantity_weight ? (parseFloat(lot.quantity_weight) % 1 === 0 ? parseInt(lot.quantity_weight) : parseFloat(lot.quantity_weight)) + ' ' + lot.quantity_unit : '—');
@@ -4064,6 +4093,59 @@ function renderReports() {
     + '</div>';
 }
 
+const PEST_REPELLENT_LOOKUP = {
+  'Aphids': ['Marigolds','Nasturtiums','Catnip','Chives','Garlic','Basil','Lavender','Mint','Dill','Cilantro','Petunias','Alyssum','Cosmos'],
+  'Cabbage Worms': ['Nasturtiums','Thyme','Sage','Rosemary','Dill','Marigolds','Catnip','Tansy','Wormwood','Hyssop'],
+  'Cabbage Moths': ['Sage','Thyme','Rosemary','Mint','Lavender','Tansy','Wormwood','Catnip'],
+  'Flea Beetles': ['Catnip','Mint','Basil','Wormwood','Tansy','Nasturtiums','Marigolds'],
+  'Spider Mites': ['Garlic','Chives','Onions','Dill','Chrysanthemums'],
+  'Whiteflies': ['Marigolds','Nasturtiums','Basil','Lavender','Petunias'],
+  'Squash Bugs': ['Nasturtiums','Marigolds','Catnip','Tansy','Petunias','Borage'],
+  'Cucumber Beetles': ['Radishes','Nasturtiums','Catnip','Oregano','Marigolds'],
+  'Japanese Beetles': ['Garlic','Chives','Catnip','Larkspur','Rue'],
+  'Tomato Hornworm': ['Basil','Borage','Marigolds','Dill','Petunias','Thyme'],
+  'Carrot Fly': ['Onions','Chives','Sage','Rosemary','Garlic','Lavender'],
+  'Nematodes': ['Marigolds','Calendula','Chrysanthemums'],
+  'Ants': ['Tansy','Mint','Catnip','Lavender','Chrysanthemums','Yarrow'],
+  'Mosquitoes': ['Catnip','Lavender','Mint','Basil','Lemon Balm','Citronella'],
+  'Moths': ['Lavender','Mint','Rosemary','Sage','Tansy','Chrysanthemums'],
+  'Slugs': ['Wormwood','Rosemary','Fennel','Ginger'],
+  'Deer': ['Lavender','Mint','Garlic','Chives','Yarrow','Tansy'],
+  'Colorado Potato Beetles': ['Catnip','Tansy','Nasturtiums','Horseradish'],
+  'Bean Beetles': ['Petunias','Marigolds','Rosemary','Summer Savory'],
+  'Flies': ['Lavender','Mint','Basil','Tansy','Yarrow','Rue'],
+  'Fleas': ['Lavender','Mint','Chrysanthemums','Tansy','Pennyroyal'],
+  'Ticks': ['Lavender','Mint','Chrysanthemums','Garlic','Rosemary'],
+  'Aphid-eating beneficials attract': ['Alyssum','Dill','Fennel','Cosmos','Yarrow','Borage'],
+};
+
+function showPestLookup() {
+  var pestList = Object.keys(PEST_REPELLENT_LOOKUP).sort();
+  var html = '<div class="alert alert-info" style="font-size:0.85rem;">Select a pest to see which plants naturally repel it.</div>'
+    + '<div class="form-group"><label class="form-label">What pest do you have?</label>'
+    + '<select class="form-control" id="pest-lookup-select" onchange="showPestLookupResult()">'
+    + '<option value="">— Select a pest —</option>'
+    + pestList.map(function(p) { return '<option value="' + p + '">' + p + '</option>'; }).join('')
+    + '</select></div>'
+    + '<div id="pest-lookup-result" style="margin-top:12px;"></div>'
+    + '<div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>';
+  openModal('🔍 What Repels This Pest?', html);
+}
+
+function showPestLookupResult() {
+  var pest = document.getElementById('pest-lookup-select').value;
+  var result = document.getElementById('pest-lookup-result');
+  if (!pest) { result.innerHTML = ''; return; }
+  var plants = PEST_REPELLENT_LOOKUP[pest] || [];
+  result.innerHTML = '<div style="font-weight:700;margin-bottom:8px;color:var(--green-mid);">Plants that repel ' + pest + ':</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+    + plants.map(function(p) {
+        return '<div style="background:var(--green-bg);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:0.85rem;font-weight:600;">🌿 ' + p + '</div>';
+      }).join('')
+    + '</div>'
+    + '<div style="margin-top:12px;font-size:0.78rem;color:var(--text-muted);">💡 Add these plants as companions near your affected crops. Check the Companions button on your seed lots for detailed planting instructions.</div>';
+}
+
 function openResource(el) {
   var url = el.getAttribute('data-url');
   if (url) window.open(url, '_blank');
@@ -4071,6 +4153,15 @@ function openResource(el) {
 
 function renderResources() {
   const exchanges = [
+    {
+      name: 'What Repels This Pest?',
+      icon: '🔍',
+      description: 'Look up which plants naturally repel specific garden pests. Find organic solutions before reaching for chemicals.',
+      specialty: 'Pest lookup tool',
+      url: null,
+      free: true,
+      action: 'showPestLookup()'
+    },
     { name: 'Seed Savers Exchange', icon: '🌽', description: 'Americas largest heirloom seed library. Trade, buy, and preserve rare open-pollinated varieties. Nonprofit founded in 1975.', specialty: 'Heirloom & Heritage varieties', url: 'https://www.seedsavers.org', free: true },
     { name: "Baker Creek Rare Seeds", icon: '🌺', description: 'One of the largest selections of rare, open-pollinated, non-GMO heirloom seeds. Specializes in varieties from around the world.', specialty: 'Rare & International varieties', url: 'https://www.rareseeds.com', free: false },
     { name: 'Southern Exposure Seed Exchange', icon: '🌻', description: 'Focus on varieties suited to the mid-Atlantic and southeastern US. Excellent for heat-tolerant and disease-resistant varieties.', specialty: 'Southeast US adapted varieties', url: 'https://www.southernexposure.com', free: false },
@@ -4086,7 +4177,8 @@ function renderResources() {
   ];
 
   const cards = exchanges.map(function(e) {
-    return '<div data-url="' + e.url + '" style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:opacity 0.15s;display:flex;flex-direction:column;gap:8px;" onclick="openResource(this)" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">'
+    var attrs = e.action ? 'onclick="' + e.action + '"' : 'onclick="openResource(this)" data-url="' + e.url + '"';
+    return '<div ' + attrs + ' style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:opacity 0.15s;display:flex;flex-direction:column;gap:8px;" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">'
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
       + '<div style="font-size:2rem;">' + e.icon + '</div>'
       + (e.free ? '<span style="background:#166534;color:#86efac;font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:600;">FREE</span>' : '')
@@ -4094,7 +4186,7 @@ function renderResources() {
       + '<div style="font-weight:700;font-size:1rem;">' + e.name + '</div>'
       + '<div style="font-size:0.75rem;color:var(--green-mid);font-weight:600;">' + e.specialty + '</div>'
       + '<div style="font-size:0.82rem;color:var(--text-muted);flex:1;">' + e.description + '</div>'
-      + '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">' + e.url.replace('https://','') + '</div>'
+      + '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">' + (e.url ? e.url.replace('https://', '') : '') + '</div>'
       + '</div>';
   }).join('');
 
