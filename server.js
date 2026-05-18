@@ -283,6 +283,28 @@ async function initDB() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'standard';
       ALTER TABLE plants ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES garden_locations(id);
       ALTER TABLE plants ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255);
+      CREATE TABLE IF NOT EXISTS flowers (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        variety VARCHAR(255),
+        brand VARCHAR(255),
+        tag_front_path VARCHAR(255),
+        tag_back_path VARCHAR(255),
+        sun_requirements VARCHAR(100),
+        watering VARCHAR(100),
+        spacing VARCHAR(100),
+        height VARCHAR(100),
+        bloom_time VARCHAR(255),
+        care_notes TEXT,
+        all_about TEXT,
+        location_id INTEGER REFERENCES garden_locations(id),
+        date_planted DATE,
+        buy_again BOOLEAN DEFAULT false,
+        try_from_seed BOOLEAN DEFAULT false,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
       CREATE TABLE IF NOT EXISTS companion_plants (
         id SERIAL PRIMARY KEY,
         species_code VARCHAR(20) NOT NULL UNIQUE,
@@ -1185,6 +1207,72 @@ async function queryAIProvider(provider, key, ollamaUrl, prompt, image, imageMim
 
   throw new Error('Unknown provider: ' + provider);
 }
+
+// Flowers API
+app.get('/api/flowers', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT f.*, gl.name as location_name FROM flowers f LEFT JOIN garden_locations gl ON f.location_id = gl.id ORDER BY f.created_at DESC');
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/flowers', authMiddleware, async (req, res) => {
+  const { name, variety, brand, sun_requirements, watering, spacing, height, bloom_time, care_notes, all_about, location_id, date_planted, buy_again, try_from_seed, notes } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO flowers (name, variety, brand, sun_requirements, watering, spacing, height, bloom_time, care_notes, all_about, location_id, date_planted, buy_again, try_from_seed, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
+      [name, variety, brand, sun_requirements, watering, spacing, height, bloom_time, care_notes, all_about, location_id || null, date_planted || null, buy_again || false, try_from_seed || false, notes]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.put('/api/flowers/:id', authMiddleware, async (req, res) => {
+  const { name, variety, brand, sun_requirements, watering, spacing, height, bloom_time, care_notes, all_about, location_id, date_planted, buy_again, try_from_seed, notes } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE flowers SET name=$1, variety=$2, brand=$3, sun_requirements=$4, watering=$5, spacing=$6, height=$7, bloom_time=$8, care_notes=$9, all_about=$10, location_id=$11, date_planted=$12, buy_again=$13, try_from_seed=$14, notes=$15, updated_at=NOW() WHERE id=$16 RETURNING *',
+      [name, variety, brand, sun_requirements, watering, spacing, height, bloom_time, care_notes, all_about, location_id || null, date_planted || null, buy_again || false, try_from_seed || false, notes, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/flowers/:id', authMiddleware, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM flowers WHERE id=$1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Flower tag photo upload
+const flowerStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = '/app/uploads/flowers';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9.]/g, '_'))
+});
+const uploadFlower = multer({ storage: flowerStorage, fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.post('/api/flowers/:id/tag/:side', authMiddleware, (req, res) => {
+  uploadFlower.single('photo')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const col = req.params.side === 'front' ? 'tag_front_path' : 'tag_back_path';
+    const photoPath = '/uploads/flowers/' + req.file.filename;
+    try {
+      const old = await pool.query('SELECT ' + col + ' FROM flowers WHERE id=$1', [req.params.id]);
+      if (old.rows[0]?.[col]) {
+        const oldFile = '/app' + old.rows[0][col];
+        if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
+      }
+      await pool.query('UPDATE flowers SET ' + col + '=$1, updated_at=NOW() WHERE id=$2', [photoPath, req.params.id]);
+      res.json({ success: true, path: photoPath });
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+  });
+});
 
 app.get('/api/companions', authMiddleware, async (req, res) => {
   try {

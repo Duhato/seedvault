@@ -1,13 +1,17 @@
-const CACHE_NAME = 'seedvault-v2';
-const ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
+const CACHE_NAME = 'seedvault-v4';
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key))))
+  );
 });
 
 self.addEventListener('fetch', e => {
+  // Don't cache anything - always fetch fresh
   if (e.request.url.includes('/api/')) return;
-  e.respondWith(
-    caches.match(e.request).then(r => r || fetch(e.request))
-  );
+  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
 });

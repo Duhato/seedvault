@@ -72,6 +72,7 @@
         <button class="nav-btn" data-page="amendments" data-tip="Track fertilizer and soil amendment applications">Amendments</button>
         <button class="nav-btn" data-page="locations" data-tip="Manage garden beds, grow bags and containers">Locations</button>
         <button class="nav-btn" data-page="weather" data-tip="View weather history and frost events">Weather</button>
+        <button class="nav-btn" data-page="flowers" data-tip="Jess's flower tracker — scan tags, track annuals, buy again list">🌸 Flowers</button>
         <button class="nav-btn" data-page="resources" data-tip="Seed exchanges, suppliers and growing references">Resources</button>
         <button class="nav-btn" data-page="reports" data-tip="AI season planner, harvest analysis and print reports">Reports</button>
       </div>
@@ -96,6 +97,7 @@
       <button class="mobile-nav-btn" data-page="amendments">🌿 Amendments</button>
       <button class="mobile-nav-btn" data-page="locations">📍 Locations</button>
       <button class="mobile-nav-btn" data-page="weather">🌤️ Weather</button>
+      <button class="mobile-nav-btn" data-page="flowers">🌸 Flowers</button>
       <button class="mobile-nav-btn" data-page="resources">🌐 Resources</button>
       <button class="mobile-nav-btn" data-page="reports">📊 Reports</button>
       <button class="mobile-nav-btn" data-page="settings">⚙️ Settings</button>
@@ -119,6 +121,8 @@
   <input type="file" id="import-zip-input" accept=".zip" style="display:none">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
   <script src="/app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {

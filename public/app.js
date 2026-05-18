@@ -153,6 +153,93 @@ async function api(path, method = 'GET', body = null) {
   return res.json();
 }
 
+// Global image cropper — call this instead of reading file directly
+// callback receives a Blob of the cropped image
+function openCropper(file, callback, aspectRatio) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    // Create cropper modal
+    var overlay = document.createElement('div');
+    overlay.id = 'cropper-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+
+    var container = document.createElement('div');
+    container.style.cssText = 'background:var(--card-bg);border-radius:12px;padding:16px;max-width:600px;width:95%;max-height:90vh;display:flex;flex-direction:column;gap:12px;';
+
+    var title = document.createElement('div');
+    title.style.cssText = 'font-weight:700;font-size:1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;';
+    title.innerHTML = '<span>✂️ Crop Photo</span><span style="font-size:0.8rem;color:var(--text-muted);">Drag inside box to move · Drag edges/corners to resize</span>';
+
+    var imgWrap = document.createElement('div');
+    imgWrap.style.cssText = 'max-height:60vh;overflow:hidden;border-radius:8px;touch-action:none;';
+
+    var img = document.createElement('img');
+    img.src = e.target.result;
+    img.style.cssText = 'max-width:100%;display:block;';
+    imgWrap.appendChild(img);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+
+    var skipBtn = document.createElement('button');
+    skipBtn.className = 'btn btn-secondary';
+    skipBtn.style.cssText = 'padding:12px 20px;font-size:1rem;';
+    skipBtn.textContent = 'Use Original';
+    skipBtn.onclick = function() {
+      if (window._cropper) { window._cropper.destroy(); window._cropper = null; }
+      document.body.removeChild(overlay);
+      callback(file);
+    };
+
+    var cropBtn = document.createElement('button');
+    cropBtn.className = 'btn btn-primary';
+    cropBtn.style.cssText = 'padding:12px 20px;font-size:1rem;';
+    cropBtn.textContent = '✂️ Crop & Use';
+    cropBtn.onclick = function() {
+      if (!window._cropper) { callback(file); return; }
+      window._cropper.getCroppedCanvas({ maxWidth: 2048, maxHeight: 2048 }).toBlob(function(blob) {
+        window._cropper.destroy();
+        window._cropper = null;
+        document.body.removeChild(overlay);
+        var croppedFile = new File([blob], file.name, { type: blob.type });
+        callback(croppedFile);
+      }, file.type || 'image/jpeg', 0.92);
+    };
+
+    btnRow.appendChild(skipBtn);
+    btnRow.appendChild(cropBtn);
+    container.appendChild(title);
+    container.appendChild(imgWrap);
+    container.appendChild(btnRow);
+    overlay.appendChild(container);
+    document.body.appendChild(overlay);
+
+    // Init Cropper.js after image loads
+    setTimeout(function() {
+      window._cropper = new Cropper(img, {
+        aspectRatio: aspectRatio || NaN,
+        viewMode: 1,
+        autoCrop: true,
+        autoCropArea: 0.95,
+        responsive: true,
+        guides: true,
+        center: true,
+        highlight: true,
+        movable: true,
+        zoomable: false,
+        rotatable: false,
+        scalable: false,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        toggleDragModeOnDblclick: false,
+        minCropBoxWidth: 50,
+        minCropBoxHeight: 50,
+      });
+    }, 500);
+  };
+  reader.readAsDataURL(file);
+}
+
 async function uploadPhoto(url, file) {
   const formData = new FormData();
   formData.append('photo', file);
@@ -167,7 +254,7 @@ async function loadAll() {
     api('/api/germination'), api('/api/locations'), api('/api/sources'),
     api('/api/crosses'), api('/api/observations'), api('/api/amendments'),
     api('/api/settings'), api('/api/inventory'),
-    api('/api/weather?days=365'), api('/api/frost-events'), api('/api/companions'),
+    api('/api/weather?days=365'), api('/api/frost-events'), api('/api/companions'), api('/api/flowers'),
   ];
   if (getRole() === 'admin') calls.push(api('/api/users')); // index 15
   const results = await Promise.all(calls);
@@ -192,7 +279,8 @@ async function loadAll() {
   const companionRows = Array.isArray(results[18]) ? results[18] : [];
   state.companions = {};
   companionRows.forEach(c => { state.companions[c.species_code] = c; });
-  state.users = results[19] && Array.isArray(results[19]) ? results[19] : [];
+  state.flowers = Array.isArray(results[19]) ? results[19] : [];
+  state.users = results[20] && Array.isArray(results[20]) ? results[20] : [];
 }
 
 function navigate(page) {
@@ -226,6 +314,7 @@ function render() {
     case 'observations': main.innerHTML = renderObservations(); break;
     case 'amendments': main.innerHTML = renderAmendments(); break;
     case 'weather': main.innerHTML = renderWeather(); break;
+    case 'flowers': main.innerHTML = renderFlowers(); break;
     case 'resources': main.innerHTML = renderResources(); break;
     case 'reports': main.innerHTML = renderReports(); break;
     case 'settings': main.innerHTML = renderSettings(); break;
@@ -1953,9 +2042,11 @@ async function uploadPacketPhoto(designation, side) {
   const input = document.getElementById(side + '-upload');
   const file = input.files[0];
   if (!file) return;
-  const result = await uploadPhoto('/api/seed-lots/' + designation + '/packet/' + side, file);
-  if (result.error) return alert('Upload failed: ' + result.error);
-  await loadAll(); showPacketPhotos(designation);
+  openCropper(file, async function(croppedFile) {
+    const result = await uploadPhoto('/api/seed-lots/' + designation + '/packet/' + side, croppedFile);
+    if (result.error) return alert('Upload failed: ' + result.error);
+    await loadAll(); showPacketPhotos(designation);
+  });
 }
 
 async function deletePacketPhoto(designation, side) {
@@ -2381,25 +2472,33 @@ async function uploadPlantGalleryPhoto(designation) {
   const input = document.getElementById('gallery-upload-' + designation);
   const file = input.files[0];
   if (!file) return;
-  const formData = new FormData();
-  formData.append('photo', file);
-  try {
-    const res = await fetch('/api/plants/' + designation + '/photos', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + getToken() },
-      body: formData
-    });
-    const result = await res.json();
-    if (result.error) { alert('Upload failed: ' + result.error); return; }
-    await loadPlantGallery(designation);
-    input.value = '';
-  } catch (err) { alert('Upload failed: ' + err.message); }
+  openCropper(file, async function(croppedFile) {
+    const formData = new FormData();
+    formData.append('photo', croppedFile);
+    try {
+      const res = await fetch('/api/plants/' + designation + '/photos', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + getToken() },
+        body: formData
+      });
+      const result = await res.json();
+      if (result.error) { alert('Upload failed: ' + result.error); return; }
+      await loadPlantGallery(designation);
+      input.value = '';
+    } catch (err) { alert('Upload failed: ' + err.message); }
+  });
 }
 
 async function deletePlantGalleryPhoto(designation, id) {
   if (!confirm('Delete this photo?')) return;
   await api('/api/plants/' + designation + '/photos/' + id, 'DELETE');
   await loadPlantGallery(designation);
+}
+
+function togglePlantGroup(key) {
+  state._expandedPlantGroup = state._expandedPlantGroup === key ? null : key;
+  const main = document.getElementById('main-content');
+  if (main) main.innerHTML = renderPlants();
 }
 
 function renderPlants() {
@@ -2437,27 +2536,47 @@ function renderPlants() {
       </div>
     </div>
     <div class="card">
-      ${thisYear.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🪴</div><p>${allThisYear.length === 0 ? 'No plants logged this season yet.' : 'No plants match your search.'}</p></div>`
-      : `<div class="table-wrap"><table>
-        <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Photo</th><th>Start</th><th>Transplanted</th><th>Seed Save</th><th>Actions</th></tr></thead>
-        <tbody>${thisYear.map(p => `<tr style="cursor:pointer;" onclick="showPlantDetail('${p.designation}')">
-          <td><span class="designation">${p.designation}</span></td>
-          <td>${p.variety_name || '—'}</td>
-          <td>${p.location_name ? '<span style="font-size:0.85rem;">📍 ' + p.location_name + '</span>' : '—'}</td>
-          <td onclick="event.stopPropagation()">${p.photo_path ? `<img src="${p.photo_path}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="showPlantPhoto('${p.designation}')">` : '<span style="color:var(--text-muted);font-size:0.8rem;">—</span>'}</td>
-          <td>${p.start_method === 'indoor_start' ? '🏠 Indoor' : p.start_method === 'transplant' ? '🌿 Transplant' : '🌱 Direct'}</td>
-          <td>${p.transplant_date ? '🪴 ' + new Date(p.transplant_date).toLocaleDateString() : p.started_indoors_date ? '🏠 Started' : '—'}</td>
-          <td>${p.selected_for_seed ? '<span class="seed-star">⭐ Selected</span>' : '—'}</td>
-          <td onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;">
-            <button class="btn btn-brown btn-sm" onclick="toggleSeedSelect('${p.designation}', ${!p.selected_for_seed})">${p.selected_for_seed ? '★ Deselect' : '☆ Seed Save'}</button>
-            <button class="btn btn-secondary btn-sm" onclick="showEditPlant('${p.designation}')">✏️</button>
-            <button class="btn btn-secondary btn-sm" onclick="showPlantPhotoUpload('${p.designation}')">📷</button>
-            <button class="btn btn-secondary btn-sm" onclick="showPlantQR('${p.designation}')">⬛ QR</button>
-            <button class="btn btn-primary btn-sm" onclick="showAddAmendment('${p.designation}')">🌿 Amend</button>
-            <button class="btn btn-danger btn-sm" onclick="deletePlant('${p.designation}')">🗑️</button>
-          </td>
-        </tr>`).join('')}</tbody>
-      </table></div>`}
+      ${(() => {
+        if (thisYear.length === 0) return '<div class="empty-state"><div class="empty-state-icon">🪴</div><p>' + (allThisYear.length === 0 ? 'No plants logged this season yet.' : 'No plants match your search.') + '</p></div>';
+        var groups = {};
+        thisYear.forEach(function(p) {
+          var key = p.seed_lot_designation || p.variety_name || 'Unknown';
+          if (!groups[key]) groups[key] = { plants: [], variety_name: p.variety_name, seed_lot: p.seed_lot_designation, location_name: p.location_name };
+          groups[key].plants.push(p);
+        });
+        return Object.entries(groups).map(function([key, group]) {
+          var seedSaveCount = group.plants.filter(function(p) { return p.selected_for_seed; }).length;
+          var expanded = state._expandedPlantGroup === key;
+          var header = '<div style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;">'
+            + '<div onclick="togglePlantGroup(this.dataset.key)" data-key="' + key.replace(/"/g, '&quot;') + '"" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;cursor:pointer;background:var(--green-bg);">'
+            + '<div><div style="font-weight:700;font-size:0.95rem;">' + (group.variety_name || key) + '</div>'
+            + '<div style="font-size:0.78rem;color:var(--text-muted);">' + key + (group.location_name ? ' · 📍 ' + group.location_name : '') + '</div></div>'
+            + '<div style="display:flex;align-items:center;gap:12px;">'
+            + (seedSaveCount > 0 ? '<span style="color:#22c55e;font-size:0.82rem;font-weight:600;">⭐ ' + seedSaveCount + ' selected</span>' : '')
+            + '<span style="background:var(--green-mid);color:white;border-radius:20px;padding:3px 10px;font-size:0.82rem;font-weight:600;">' + group.plants.length + ' plant' + (group.plants.length > 1 ? 's' : '') + '</span>'
+            + '<span style="color:var(--text-muted);">' + (expanded ? '▲' : '▼') + '</span>'
+            + '</div></div>';
+          if (!expanded) return header + '</div>';
+          var rows = group.plants.map(function(p) {
+            return '<tr style="cursor:pointer;" onclick="showPlantDetail(' + JSON.stringify(p.designation) + ')">'
+              + '<td><span class="designation" style="font-size:0.75rem;">' + p.designation + '</span></td>'
+              + '<td style="font-size:0.82rem;">' + (p.location_name ? '📍 ' + p.location_name : '—') + '</td>'
+              + '<td style="font-size:0.82rem;">' + (p.start_method === 'indoor_start' ? '🏠 Indoor' : p.start_method === 'transplant' ? '🌿 Transplant' : '🌱 Direct') + '</td>'
+              + '<td>' + (p.selected_for_seed ? '<span style="color:#22c55e;font-size:0.8rem;">⭐</span>' : '—') + '</td>'
+              + '<td onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;">'
+              + '<button class="btn btn-brown btn-sm" onclick="toggleSeedSelect(' + JSON.stringify(p.designation) + ',' + !p.selected_for_seed + ')">' + (p.selected_for_seed ? '★' : '☆') + '</button>'
+              + '<button class="btn btn-secondary btn-sm" onclick="showEditPlant(' + JSON.stringify(p.designation) + ')">✏️</button>'
+              + '<button class="btn btn-secondary btn-sm" onclick="showPlantPhotoUpload(' + JSON.stringify(p.designation) + ')">📷</button>'
+              + '<button class="btn btn-secondary btn-sm" onclick="showPlantQR(' + JSON.stringify(p.designation) + ')">⬛</button>'
+              + '<button class="btn btn-primary btn-sm" onclick="showAddAmendment(' + JSON.stringify(p.designation) + ')">🌿</button>'
+              + '<button class="btn btn-danger btn-sm" onclick="deletePlant(' + JSON.stringify(p.designation) + ')">🗑️</button>'
+              + '</td></tr>';
+          }).join('');
+          return header
+            + '<div style="padding:8px;"><table style="width:100%;"><thead><tr><th>Plant</th><th>Location</th><th>Start</th><th>Seed Save</th><th>Actions</th></tr></thead><tbody>'
+            + rows + '</tbody></table></div></div>';
+        }).join('');
+      })()}
     </div>
     ${state.plants.filter(p => p.season_year !== year).length > 0 ? `
     <div class="card">
@@ -2512,10 +2631,12 @@ async function submitPlantPhoto(designation) {
   const input = document.getElementById('plant-photo-upload');
   const file = input.files[0];
   if (!file) return alert('Please select a photo');
-  const result = await uploadPhoto('/api/plants/' + designation + '/photo', file);
-  if (result.error) return alert('Upload failed: ' + result.error);
-  await loadAll(); closeModal(); render();
-  alert('✅ Photo uploaded successfully!');
+  openCropper(file, async function(croppedFile) {
+    const result = await uploadPhoto('/api/plants/' + designation + '/photo', croppedFile);
+    if (result.error) return alert('Upload failed: ' + result.error);
+    await loadAll(); closeModal(); render();
+    alert('✅ Photo uploaded successfully!');
+  });
 }
 
 async function deletePlantPhoto(designation) {
@@ -4151,6 +4272,374 @@ function openResource(el) {
   if (url) window.open(url, '_blank');
 }
 
+function renderFlowers() {
+  var flowers = state.flowers || [];
+  var buyAgain = flowers.filter(function(f) { return f.buy_again; });
+  var fromSeed = flowers.filter(function(f) { return f.try_from_seed; });
+
+  var cards = flowers.length === 0
+    ? '<div class="card"><div class="empty-state"><div class="empty-state-icon">🌸</div><p>No flowers added yet. Click + Add Flower to scan a plant tag and get started.</p></div></div>'
+    : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">'
+      + flowers.map(function(f) {
+          return '<div class="card" style="cursor:pointer;" onclick="showFlowerDetail(' + f.id + ')">'
+            + (f.tag_front_path ? '<img src="' + f.tag_front_path + '" style="width:100%;height:160px;object-fit:cover;border-radius:8px;margin-bottom:12px;">' : '<div style="width:100%;height:120px;background:var(--green-bg);border-radius:8px;margin-bottom:12px;display:flex;align-items:center;justify-content:center;font-size:3rem;">🌸</div>')
+            + '<div style="font-weight:700;font-size:1rem;margin-bottom:4px;">' + f.name + '</div>'
+            + (f.variety ? '<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:6px;">' + f.variety + (f.brand ? ' · ' + f.brand : '') + '</div>' : '')
+            + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:0.78rem;">'
+            + (f.sun_requirements ? '<span style="background:var(--green-bg);padding:2px 8px;border-radius:12px;">☀️ ' + f.sun_requirements + '</span>' : '')
+            + (f.watering ? '<span style="background:var(--green-bg);padding:2px 8px;border-radius:12px;">💧 ' + f.watering + '</span>' : '')
+            + (f.bloom_time ? '<span style="background:var(--green-bg);padding:2px 8px;border-radius:12px;">🌸 ' + f.bloom_time + '</span>' : '')
+            + '</div>'
+            + '<div style="display:flex;gap:8px;">'
+            + (f.buy_again ? '<span style="font-size:0.75rem;color:#22c55e;font-weight:600;">✅ Buy again</span>' : '')
+            + (f.try_from_seed ? '<span style="font-size:0.75rem;color:#f59e0b;font-weight:600;">🌱 Try from seed</span>' : '')
+            + '</div>'
+            + '</div>';
+        }).join('')
+      + '</div>';
+
+  return '<div class="page-header">'
+    + '<h1 class="page-title">🌸 Flowers</h1>'
+    + '<button class="btn btn-primary" onclick="showAddFlower()">+ Add Flower</button>'
+    + '</div>'
+    + (buyAgain.length > 0 || fromSeed.length > 0 ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">'
+      + (buyAgain.length > 0 ? '<div class="card"><div class="card-title">✅ Buy Again Next Year (' + buyAgain.length + ')</div>'
+        + buyAgain.map(function(f) { return '<div style="font-size:0.85rem;padding:4px 0;border-bottom:1px solid var(--border);">' + f.name + (f.variety ? ' — ' + f.variety : '') + '</div>'; }).join('')
+        + '</div>' : '')
+      + (fromSeed.length > 0 ? '<div class="card"><div class="card-title">🌱 Try From Seed (' + fromSeed.length + ')</div>'
+        + fromSeed.map(function(f) { return '<div style="font-size:0.85rem;padding:4px 0;border-bottom:1px solid var(--border);">' + f.name + (f.variety ? ' — ' + f.variety : '') + '</div>'; }).join('')
+        + '</div>' : '')
+      + '</div>' : '')
+    + cards;
+}
+
+function showAddFlower() {
+  openModal('🌸 Add Flower', '<div class="alert alert-info" style="font-size:0.85rem;">'
+    + (state.settings.ai_provider ? '📷 Upload photos of the plant tag and AI will fill in all the details automatically.' : 'Add your flower details manually. Connect an AI provider in Settings to enable tag scanning.')
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
+    + '<div><div style="font-weight:600;margin-bottom:8px;">Front of Tag</div>'
+    + '<input type="file" id="flower-tag-front" accept="image/*" class="form-control" style="margin-bottom:8px;">'
+    + '<div id="flower-front-preview" style="display:none;"><img id="flower-front-img" style="width:100%;border-radius:8px;border:2px solid var(--border);"></div>'
+    + '</div>'
+    + '<div><div style="font-weight:600;margin-bottom:8px;">Back of Tag</div>'
+    + '<input type="file" id="flower-tag-back" accept="image/*" class="form-control" style="margin-bottom:8px;">'
+    + '<div id="flower-back-preview" style="display:none;"><img id="flower-back-img" style="width:100%;border-radius:8px;border:2px solid var(--border);"></div>'
+    + '</div>'
+    + '</div>'
+    + (state.settings.ai_provider ? '<div style="margin-bottom:16px;"><button class="btn btn-secondary" id="flower-scan-btn" onclick="scanFlowerTags()">✨ Scan Tags with AI</button></div>' : '')
+    + '<div id="flower-ai-preview" style="display:none;margin-bottom:16px;background:var(--green-bg);border-radius:8px;padding:12px;font-size:0.85rem;"></div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Plant Name *</label><input class="form-control" id="f-fname" placeholder="e.g. Marigold"></div>'
+    + '<div class="form-group"><label class="form-label">Variety</label><input class="form-control" id="f-fvariety" placeholder="e.g. French Dwarf"></div>'
+    + '</div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Brand</label><input class="form-control" id="f-fbrand" placeholder="e.g. Bonnie Plants"></div>'
+    + '<div class="form-group"><label class="form-label">Date Planted</label><input class="form-control" id="f-fdate" type="date"></div>'
+    + '</div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Sun Requirements</label><select class="form-control" id="f-fsun"><option value="">Select...</option><option>Full Sun</option><option>Partial Sun</option><option>Partial Shade</option><option>Full Shade</option></select></div>'
+    + '<div class="form-group"><label class="form-label">Watering</label><select class="form-control" id="f-fwater"><option value="">Select...</option><option>Low</option><option>Medium</option><option>High</option></select></div>'
+    + '</div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Height</label><input class="form-control" id="f-fheight" placeholder="e.g. 12-18 inches"></div>'
+    + '<div class="form-group"><label class="form-label">Spacing</label><input class="form-control" id="f-fspacing" placeholder="e.g. 6-8 inches"></div>'
+    + '</div>'
+    + '<div class="form-group"><label class="form-label">Bloom Time</label><input class="form-control" id="f-fbloom" placeholder="e.g. Summer to Fall"></div>'
+    + '<div class="form-group"><label class="form-label">Garden Location</label><select class="form-control" id="f-flocation"><option value="">No location assigned</option>'
+    + state.locations.filter(function(l) { return l.active; }).map(function(l) { return '<option value="' + l.id + '">' + l.name + '</option>'; }).join('')
+    + '</select></div>'
+    + '<div class="form-group"><label class="form-label">Care Notes</label><textarea class="form-control" id="f-fcare" rows="2" placeholder="Watering schedule, fertilizer, any special care..."></textarea></div>'
+    + '<div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-fnotes" rows="2"></textarea></div>'
+    + '<div style="display:flex;gap:16px;margin-bottom:16px;">'
+    + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="f-fbuyagain"> <span>✅ Buy again next year</span></label>'
+    + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="f-ffromseed"> <span>🌱 Try growing from seed</span></label>'
+    + '</div>'
+    + '<div class="form-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="submitAddFlower()">🌸 Save Flower</button>'
+    + '</div>'
+  );
+
+  // Set up photo previews
+  setTimeout(function() {
+    var frontInput = document.getElementById('flower-tag-front');
+    var backInput = document.getElementById('flower-tag-back');
+    if (frontInput) frontInput.addEventListener('change', function() {
+      var file = this.files[0];
+      if (!file) return;
+      openCropper(file, function(croppedFile) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('flower-front-img').src = e.target.result;
+          document.getElementById('flower-front-preview').style.display = 'block';
+          window._flowerFrontBase64 = e.target.result.split(',')[1];
+          window._flowerFrontMime = croppedFile.type;
+          window._flowerFrontFile = croppedFile;
+        };
+        reader.readAsDataURL(croppedFile);
+      });
+    });
+    if (backInput) backInput.addEventListener('change', function() {
+      var file = this.files[0];
+      if (!file) return;
+      openCropper(file, function(croppedFile) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('flower-back-img').src = e.target.result;
+          document.getElementById('flower-back-preview').style.display = 'block';
+          window._flowerBackBase64 = e.target.result.split(',')[1];
+          window._flowerBackMime = croppedFile.type;
+          window._flowerBackFile = croppedFile;
+        };
+        reader.readAsDataURL(croppedFile);
+      });
+    });
+  }, 100);
+  window._flowerFrontBase64 = null;
+  window._flowerBackBase64 = null;
+}
+
+async function scanFlowerTags() {
+  if (!window._flowerFrontBase64 && !window._flowerBackBase64) {
+    alert('Please upload at least one tag photo first');
+    return;
+  }
+  var btn = document.getElementById('flower-scan-btn');
+  btn.textContent = '⏳ Scanning...';
+  btn.disabled = true;
+
+  var prompt = 'These are photos of a plant/flower tag from a garden center. Extract all information from the tag(s) and respond with JSON only, no markdown. Use this structure: {"name":"common plant name","variety":"variety name if shown","brand":"brand or company name","sun":"Full Sun/Partial Sun/Partial Shade/Full Shade","water":"Low/Medium/High","height":"height range","spacing":"spacing recommendation","bloom_time":"when it blooms","care_notes":"any care instructions from the tag","all_about":"Write 3-4 sentences about this plant — what it looks like, why gardeners love it, and any interesting facts"}. If a field is not shown on the tag leave it as empty string.';
+
+  try {
+    var payload = { prompt: prompt };
+    if (window._flowerFrontBase64) { payload.image = window._flowerFrontBase64; payload.imageMime = window._flowerFrontMime; }
+    // If we have both images, combine them in the prompt
+    if (window._flowerFrontBase64 && window._flowerBackBase64) {
+      prompt = 'These are photos of the front and back of a plant/flower tag. Extract all information and respond with JSON only, no markdown. Use this structure: {"name":"common plant name","variety":"variety name if shown","brand":"brand or company name","sun":"Full Sun/Partial Sun/Partial Shade/Full Shade","water":"Low/Medium/High","height":"height range","spacing":"spacing recommendation","bloom_time":"when it blooms","care_notes":"any care instructions from the tag","all_about":"Write 3-4 sentences about this plant — what it looks like, why gardeners love it, and any interesting facts"}';
+      payload.prompt = prompt;
+    }
+
+    var response = await api('/api/ai/query', 'POST', payload);
+    if (!response.response) throw new Error('No response');
+    var clean = stripJsonFences(response.response);
+    var data = JSON.parse(clean);
+
+    // Fill in the form
+    if (data.name) document.getElementById('f-fname').value = data.name;
+    if (data.variety) document.getElementById('f-fvariety').value = data.variety;
+    if (data.brand) document.getElementById('f-fbrand').value = data.brand;
+    if (data.height) document.getElementById('f-fheight').value = data.height;
+    if (data.spacing) document.getElementById('f-fspacing').value = data.spacing;
+    if (data.bloom_time) document.getElementById('f-fbloom').value = data.bloom_time;
+    if (data.care_notes) document.getElementById('f-fcare').value = data.care_notes;
+    if (data.sun) {
+      var sunEl = document.getElementById('f-fsun');
+      for (var i = 0; i < sunEl.options.length; i++) {
+        if (sunEl.options[i].value === data.sun) { sunEl.value = data.sun; break; }
+      }
+    }
+    if (data.water) {
+      var waterEl = document.getElementById('f-fwater');
+      for (var i = 0; i < waterEl.options.length; i++) {
+        if (waterEl.options[i].value === data.water) { waterEl.value = data.water; break; }
+      }
+    }
+    window._flowerAllAbout = data.all_about || '';
+
+    var preview = document.getElementById('flower-ai-preview');
+    preview.style.display = 'block';
+    preview.innerHTML = '✨ AI found: <strong>' + (data.name || 'Unknown') + (data.variety ? ' — ' + data.variety : '') + '</strong>. Review the fields below and edit anything that looks wrong.';
+
+  } catch(err) {
+    var preview = document.getElementById('flower-ai-preview');
+    preview.style.display = 'block';
+    preview.innerHTML = '<span style="color:#ef4444;">❌ Could not read tag: ' + err.message + '. Please fill in the fields manually.</span>';
+  }
+
+  btn.textContent = '✨ Scan Tags with AI';
+  btn.disabled = false;
+}
+
+async function submitAddFlower() {
+  var name = document.getElementById('f-fname').value.trim();
+  if (!name) { alert('Please enter a plant name'); return; }
+
+  var flowerData = {
+    name: name,
+    variety: document.getElementById('f-fvariety').value.trim(),
+    brand: document.getElementById('f-fbrand').value.trim(),
+    sun_requirements: document.getElementById('f-fsun').value,
+    watering: document.getElementById('f-fwater').value,
+    height: document.getElementById('f-fheight').value.trim(),
+    spacing: document.getElementById('f-fspacing').value.trim(),
+    bloom_time: document.getElementById('f-fbloom').value.trim(),
+    care_notes: document.getElementById('f-fcare').value.trim(),
+    all_about: window._flowerAllAbout || '',
+    location_id: document.getElementById('f-flocation').value || null,
+    date_planted: document.getElementById('f-fdate').value || null,
+    buy_again: document.getElementById('f-fbuyagain').checked,
+    try_from_seed: document.getElementById('f-ffromseed').checked,
+    notes: document.getElementById('f-fnotes').value.trim()
+  };
+
+  var result = await api('/api/flowers', 'POST', flowerData);
+  if (result.error) { alert('Save failed: ' + result.error); return; }
+
+  // Upload tag photos if selected
+  var flowerId = result.id;
+  var frontFile = window._flowerFrontFile || document.getElementById('flower-tag-front').files[0];
+  var backFile = window._flowerBackFile || document.getElementById('flower-tag-back').files[0];
+
+  if (frontFile) {
+    var fd = new FormData();
+    fd.append('photo', frontFile);
+    await fetch('/api/flowers/' + flowerId + '/tag/front', { method: 'POST', headers: { 'Authorization': 'Bearer ' + getToken() }, body: fd });
+  }
+  if (backFile) {
+    var fd2 = new FormData();
+    fd2.append('photo', backFile);
+    await fetch('/api/flowers/' + flowerId + '/tag/back', { method: 'POST', headers: { 'Authorization': 'Bearer ' + getToken() }, body: fd2 });
+  }
+
+  await loadAll();
+  closeModal();
+  navigate('flowers');
+}
+
+function openFlowerTag(src) {
+  window.open(src, '_blank');
+}
+
+function showFlowerDetail(id) {
+  var f = state.flowers.find(function(x) { return x.id === id; });
+  if (!f) return;
+
+  var companions = [];
+  Object.values(BUILTIN_COMPANIONS).forEach(function(data) {
+    data.good.forEach(function(g) {
+      if (g.name.toLowerCase().includes(f.name.toLowerCase()) || f.name.toLowerCase().includes(g.name.toLowerCase())) {
+        companions.push(g.name);
+      }
+    });
+  });
+
+  openModal('🌸 ' + f.name, '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;">'
+    + (f.tag_front_path ? '<div><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">Front of Tag</div><img src="' + f.tag_front_path + '" style="width:160px;border-radius:8px;border:2px solid var(--border);cursor:pointer;" onclick="openFlowerTag(this.src)"></div>' : '')
+    + (f.tag_back_path ? '<div><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">Back of Tag</div><img src="' + f.tag_back_path + '" style="width:160px;border-radius:8px;border:2px solid var(--border);cursor:pointer;" onclick="openFlowerTag(this.src)"></div>' : '')
+    + '</div>'
+    + (f.variety ? '<div style="font-size:0.9rem;color:var(--text-muted);margin-bottom:4px;">' + f.variety + (f.brand ? ' · ' + f.brand : '') + '</div>' : '')
+    + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">'
+    + (f.sun_requirements ? '<div style="background:var(--green-bg);border-radius:8px;padding:8px;"><div style="font-size:0.7rem;color:var(--text-muted);">SUN</div><div style="font-weight:600;font-size:0.85rem;">☀️ ' + f.sun_requirements + '</div></div>' : '')
+    + (f.watering ? '<div style="background:var(--green-bg);border-radius:8px;padding:8px;"><div style="font-size:0.7rem;color:var(--text-muted);">WATER</div><div style="font-weight:600;font-size:0.85rem;">💧 ' + f.watering + '</div></div>' : '')
+    + (f.bloom_time ? '<div style="background:var(--green-bg);border-radius:8px;padding:8px;"><div style="font-size:0.7rem;color:var(--text-muted);">BLOOM TIME</div><div style="font-weight:600;font-size:0.85rem;">🌸 ' + f.bloom_time + '</div></div>' : '')
+    + (f.height ? '<div style="background:var(--green-bg);border-radius:8px;padding:8px;"><div style="font-size:0.7rem;color:var(--text-muted);">HEIGHT</div><div style="font-weight:600;font-size:0.85rem;">📏 ' + f.height + '</div></div>' : '')
+    + (f.spacing ? '<div style="background:var(--green-bg);border-radius:8px;padding:8px;"><div style="font-size:0.7rem;color:var(--text-muted);">SPACING</div><div style="font-weight:600;font-size:0.85rem;">↔️ ' + f.spacing + '</div></div>' : '')
+    + (f.location_name ? '<div style="background:var(--green-bg);border-radius:8px;padding:8px;"><div style="font-size:0.7rem;color:var(--text-muted);">LOCATION</div><div style="font-weight:600;font-size:0.85rem;">📍 ' + f.location_name + '</div></div>' : '')
+    + '</div>'
+    + (f.all_about ? '<div style="background:var(--green-bg);border-radius:8px;padding:12px;margin-bottom:12px;font-size:0.85rem;"><div style="font-weight:700;margin-bottom:4px;">About this plant</div>' + f.all_about + '</div>' : '')
+    + (f.care_notes ? '<div style="margin-bottom:12px;"><div style="font-weight:600;font-size:0.85rem;margin-bottom:4px;">🌿 Care Notes</div><div style="font-size:0.85rem;color:var(--text-muted);">' + f.care_notes + '</div></div>' : '')
+    + (f.notes ? '<div style="margin-bottom:12px;"><div style="font-weight:600;font-size:0.85rem;margin-bottom:4px;">📝 Notes</div><div style="font-size:0.85rem;color:var(--text-muted);">' + f.notes + '</div></div>' : '')
+    + '<div style="display:flex;gap:16px;margin-bottom:16px;">'
+    + '<label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer;"><input type="checkbox" ' + (f.buy_again ? 'checked' : '') + ' onchange="updateFlowerField(' + f.id + ',&quot;buy_again&quot;,this.checked)"> ✅ Buy again</label>'
+    + '<label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer;"><input type="checkbox" ' + (f.try_from_seed ? 'checked' : '') + ' onchange="updateFlowerField(' + f.id + ',&quot;try_from_seed&quot;,this.checked)"> 🌱 Try from seed</label>'
+    + '</div>'
+    + '<div class="form-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal()">Close</button>'
+    + '<button class="btn btn-secondary" onclick="showEditFlower(' + f.id + ')">✏️ Edit</button>'
+    + '<button class="btn btn-danger btn-sm" onclick="deleteFlower(' + f.id + ')">🗑️ Delete</button>'
+    + '</div>'
+  );
+}
+
+async function updateFlowerField(id, field, value) {
+  var f = state.flowers.find(function(x) { return x.id === id; });
+  if (!f) return;
+  var updated = Object.assign({}, f);
+  updated[field] = value;
+  await api('/api/flowers/' + id, 'PUT', updated);
+  await loadAll();
+}
+
+async function deleteFlower(id) {
+  if (!confirm('Delete this flower?')) return;
+  await api('/api/flowers/' + id, 'DELETE');
+  await loadAll();
+  closeModal();
+  navigate('flowers');
+}
+
+function showEditFlower(id) {
+  var f = state.flowers.find(function(x) { return x.id === id; });
+  if (!f) return;
+  window._editFlowerId = id;
+  window._flowerAllAbout = f.all_about || '';
+  openModal('✏️ Edit — ' + f.name,
+    '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Plant Name *</label><input class="form-control" id="f-fname" value="' + (f.name || '') + '"></div>'
+    + '<div class="form-group"><label class="form-label">Variety</label><input class="form-control" id="f-fvariety" value="' + (f.variety || '') + '"></div>'
+    + '</div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Brand</label><input class="form-control" id="f-fbrand" value="' + (f.brand || '') + '"></div>'
+    + '<div class="form-group"><label class="form-label">Date Planted</label><input class="form-control" id="f-fdate" type="date" value="' + (f.date_planted ? f.date_planted.split('T')[0] : '') + '"></div>'
+    + '</div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Sun Requirements</label><select class="form-control" id="f-fsun"><option value="">Select...</option>'
+    + ['Full Sun','Partial Sun','Partial Shade','Full Shade'].map(function(s) { return '<option ' + (f.sun_requirements === s ? 'selected' : '') + '>' + s + '</option>'; }).join('')
+    + '</select></div>'
+    + '<div class="form-group"><label class="form-label">Watering</label><select class="form-control" id="f-fwater"><option value="">Select...</option>'
+    + ['Low','Medium','High'].map(function(s) { return '<option ' + (f.watering === s ? 'selected' : '') + '>' + s + '</option>'; }).join('')
+    + '</select></div>'
+    + '</div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Height</label><input class="form-control" id="f-fheight" value="' + (f.height || '') + '"></div>'
+    + '<div class="form-group"><label class="form-label">Spacing</label><input class="form-control" id="f-fspacing" value="' + (f.spacing || '') + '"></div>'
+    + '</div>'
+    + '<div class="form-group"><label class="form-label">Bloom Time</label><input class="form-control" id="f-fbloom" value="' + (f.bloom_time || '') + '"></div>'
+    + '<div class="form-group"><label class="form-label">Garden Location</label><select class="form-control" id="f-flocation"><option value="">No location</option>'
+    + state.locations.filter(function(l) { return l.active; }).map(function(l) { return '<option value="' + l.id + '" ' + (f.location_id === l.id ? 'selected' : '') + '>' + l.name + '</option>'; }).join('')
+    + '</select></div>'
+    + '<div class="form-group"><label class="form-label">Care Notes</label><textarea class="form-control" id="f-fcare" rows="2">' + (f.care_notes || '') + '</textarea></div>'
+    + '<div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-fnotes" rows="2">' + (f.notes || '') + '</textarea></div>'
+    + '<div style="display:flex;gap:16px;margin-bottom:16px;">'
+    + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="f-fbuyagain" ' + (f.buy_again ? 'checked' : '') + '> ✅ Buy again</label>'
+    + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="f-ffromseed" ' + (f.try_from_seed ? 'checked' : '') + '> 🌱 Try from seed</label>'
+    + '</div>'
+    + '<div class="form-actions">'
+    + '<button class="btn btn-secondary" onclick="showFlowerDetail(' + id + ')">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="submitEditFlower()">💾 Save Changes</button>'
+    + '</div>'
+  );
+}
+
+async function submitEditFlower() {
+  var id = window._editFlowerId;
+  var f = state.flowers.find(function(x) { return x.id === id; });
+  var name = document.getElementById('f-fname').value.trim();
+  if (!name) { alert('Please enter a plant name'); return; }
+  var updated = {
+    name: name,
+    variety: document.getElementById('f-fvariety').value.trim(),
+    brand: document.getElementById('f-fbrand').value.trim(),
+    sun_requirements: document.getElementById('f-fsun').value,
+    watering: document.getElementById('f-fwater').value,
+    height: document.getElementById('f-fheight').value.trim(),
+    spacing: document.getElementById('f-fspacing').value.trim(),
+    bloom_time: document.getElementById('f-fbloom').value.trim(),
+    care_notes: document.getElementById('f-fcare').value.trim(),
+    all_about: window._flowerAllAbout || f.all_about || '',
+    location_id: document.getElementById('f-flocation').value || null,
+    date_planted: document.getElementById('f-fdate').value || null,
+    buy_again: document.getElementById('f-fbuyagain').checked,
+    try_from_seed: document.getElementById('f-ffromseed').checked,
+    notes: document.getElementById('f-fnotes').value.trim()
+  };
+  var result = await api('/api/flowers/' + id, 'PUT', updated);
+  if (result.error) { alert('Save failed: ' + result.error); return; }
+  await loadAll();
+  showFlowerDetail(id);
+}
+
 function renderResources() {
   const exchanges = [
     {
@@ -4549,14 +5038,16 @@ function showPestHelper(designation, varietyName) {
       photoInput.addEventListener('change', function() {
         var file = this.files[0];
         if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function(e) {
-          document.getElementById('pest-photo-img').src = e.target.result;
-          document.getElementById('pest-photo-preview').style.display = 'block';
-          window._pestPhotoBase64 = e.target.result.split(',')[1];
-          window._pestPhotoMime = file.type;
-        };
-        reader.readAsDataURL(file);
+        openCropper(file, function(croppedFile) {
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            document.getElementById('pest-photo-img').src = e.target.result;
+            document.getElementById('pest-photo-preview').style.display = 'block';
+            window._pestPhotoBase64 = e.target.result.split(',')[1];
+            window._pestPhotoMime = croppedFile.type;
+          };
+          reader.readAsDataURL(croppedFile);
+        });
       });
     }
   }, 100);
@@ -5386,4 +5877,1304 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await checkAuth();
   if (getToken()) { await loadAll(); render(); }
-});
+});// Image cropper using Cropper.js
+function openCropper(file, callback, aspectRatio) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;';
+
+    var container = document.createElement('div');
+    container.style.cssText = 'background:var(--card-bg);border-radius:12px;padding:12px;width:100%;max-width:500px;display:flex;flex-direction:column;gap:10px;';
+
+    var title = document.createElement('div');
+    title.style.cssText = 'font-weight:700;font-size:0.95rem;';
+    title.innerHTML = '✂️ Crop Photo &nbsp;<span style="font-weight:400;font-size:0.78rem;color:var(--text-muted);">Drag the box to select the area you want to keep</span>';
+
+    var imgWrap = document.createElement('div');
+    imgWrap.style.cssText = 'width:100%;height:55vh;background:#000;border-radius:8px;overflow:hidden;';
+
+    var img = document.createElement('img');
+    img.src = e.target.result;
+    img.style.cssText = 'max-width:100%;display:block;';
+    imgWrap.appendChild(img);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.style.cssText = 'padding:14px;font-size:1rem;';
+    cancelBtn.textContent = 'Use Full Photo';
+    cancelBtn.onclick = function() {
+      if (window._cropper) { window._cropper.destroy(); window._cropper = null; }
+      overlay.parentNode.removeChild(overlay);
+      callback(file);
+    };
+
+    var cropBtn = document.createElement('button');
+    cropBtn.className = 'btn btn-primary';
+    cropBtn.style.cssText = 'padding:14px;font-size:1rem;';
+    cropBtn.textContent = '✂️ Crop & Save';
+    cropBtn.onclick = function() {
+      if (!window._cropper) { overlay.parentNode.removeChild(overlay); callback(file); return; }
+      window._cropper.getCroppedCanvas({ maxWidth: 2048, maxHeight: 2048 }).toBlob(function(blob) {
+        window._cropper.destroy();
+        window._cropper = null;
+        overlay.parentNode.removeChild(overlay);
+        callback(new File([blob], file.name, { type: 'image/jpeg' }));
+      }, 'image/jpeg', 0.92);
+    };
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(cropBtn);
+    container.appendChild(title);
+    container.appendChild(imgWrap);
+    container.appendChild(btnRow);
+    overlay.appendChild(container);
+    document.body.appendChild(overlay);
+
+    setTimeout(function() {
+      window._cropper = new Cropper(img, {
+        viewMode: 1,
+        dragMode: 'move',
+        autoCrop: true,
+        autoCropArea: 0.8,
+        movable: true,
+        zoomable: true,
+        rotatable: false,
+        scalable: false,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        guides: true,
+        center: true,
+        highlight: true,
+        background: true,
+        responsive: true,
+        restore: false,
+        modal: true,
+        toggleDragModeOnDblclick: false,
+      });
+    }, 300);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function uploadPhoto(url, file) {
+  const formData = new FormData();
+  formData.append('photo', file);
+  const res = await fetch(url, { method: 'POST', headers: { 'Authorization': 'Bearer ' + getToken() }, body: formData });
+  return res.json();
+}
+
+async function loadAll() {
+  const calls = [
+    api('/api/varieties'), api('/api/seed-lots'), api('/api/plants'), api('/api/projects'),
+    api('/api/harvest'), api('/api/species'), api('/api/stats'), api('/api/viability'),
+    api('/api/germination'), api('/api/locations'), api('/api/sources'),
+    api('/api/crosses'), api('/api/observations'), api('/api/amendments'),
+    api('/api/settings'), api('/api/inventory'),
+    api('/api/weather?days=365'), api('/api/frost-events'), api('/api/companions'), api('/api/flowers'),
+  ];
+  if (getRole() === 'admin') calls.push(api('/api/users')); // index 15
+  const results = await Promise.all(calls);
+  state.varieties = Array.isArray(results[0]) ? results[0] : [];
+  state.seedLots = Array.isArray(results[1]) ? results[1] : [];
+  state.plants = Array.isArray(results[2]) ? results[2] : [];
+  state.projects = Array.isArray(results[3]) ? results[3] : [];
+  state.harvest = Array.isArray(results[4]) ? results[4] : [];
+  state.species = Array.isArray(results[5]) ? results[5] : [];
+  state.stats = results[6] || {};
+  state.viability = Array.isArray(results[7]) ? results[7] : [];
+  state.germination = Array.isArray(results[8]) ? results[8] : [];
+  state.locations = Array.isArray(results[9]) ? results[9] : [];
+  state.sources = Array.isArray(results[10]) ? results[10] : [];
+  state.crosses = Array.isArray(results[11]) ? results[11] : [];
+  state.observations = Array.isArray(results[12]) ? results[12] : [];
+  state.amendments = Array.isArray(results[13]) ? results[13] : [];
+  state.settings = results[14] && !Array.isArray(results[14]) ? results[14] : {};
+  state.inventory = Array.isArray(results[15]) ? results[15] : [];
+  state.weatherLog = Array.isArray(results[16]) ? results[16] : [];
+  state.frostEvents = Array.isArray(results[17]) ? results[17] : [];
+  const companionRows = Array.isArray(results[18]) ? results[18] : [];
+  state.companions = {};
+  companionRows.forEach(c => { state.companions[c.species_code] = c; });
+  state.flowers = Array.isArray(results[19]) ? results[19] : [];
+  state.users = results[20] && Array.isArray(results[20]) ? results[20] : [];
+}
+
+function navigate(page) {
+  state.page = page;
+  document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+  document.querySelectorAll('.nav-gear').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+  document.getElementById('mobile-menu').classList.add('hidden');
+  render();
+}
+
+function openModal(title, bodyHTML) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = bodyHTML;
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
+
+function render() {
+  const main = document.getElementById('main-content');
+  switch (state.page) {
+    case 'dashboard': main.innerHTML = renderDashboard(); setTimeout(loadWeather, 100); break;
+    case 'varieties': main.innerHTML = renderVarieties(); break;
+    case 'seedlots': main.innerHTML = renderSeedLots(); break;
+    case 'plants': main.innerHTML = renderPlants(); break;
+    case 'harvest': main.innerHTML = renderHarvest(); break;
+    case 'projects': main.innerHTML = renderProjects(); break;
+    case 'germination': main.innerHTML = renderGermination(); break;
+    case 'locations': main.innerHTML = renderLocations(); break;
+    case 'crosses': main.innerHTML = renderCrosses(); break;
+    case 'observations': main.innerHTML = renderObservations(); break;
+    case 'amendments': main.innerHTML = renderAmendments(); break;
+    case 'weather': main.innerHTML = renderWeather(); break;
+    case 'flowers': main.innerHTML = renderFlowers(); break;
+    case 'resources': main.innerHTML = renderResources(); break;
+    case 'reports': main.innerHTML = renderReports(); break;
+    case 'settings': main.innerHTML = renderSettings(); break;
+  }
+}
+
+function formatFrostDate(mmdd) {
+  if (!mmdd) return '—';
+  const parts = mmdd.split('-');
+  if (parts.length < 2) return mmdd;
+  const m = parseInt(parts[0]);
+  const d = parseInt(parts[1]);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if (m < 1 || m > 12) return mmdd;
+  return months[m-1] + ' ' + d;
+}
+
+function getPlantingWindow(lot) {
+  const settings = state.settings;
+  if (!settings.last_frost_date) return '';
+  const year = new Date().getFullYear();
+  const [lm, ld] = settings.last_frost_date.split('-').map(Number);
+  const [fm, fd] = (settings.first_frost_date || '10-15').split('-').map(Number);
+  const lastFrost = new Date(year, lm-1, ld);
+  const firstFrost = new Date(year, fm-1, fd);
+  const today = new Date();
+  let lines = [];
+
+  if (lot.start_indoors_weeks && !lot.direct_sow) {
+    const startIndoors = new Date(lastFrost);
+    startIndoors.setDate(startIndoors.getDate() - (lot.start_indoors_weeks * 7));
+    const isPast = startIndoors < today;
+    lines.push(`<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <span>🏠 Start Indoors</span>
+      <span style="font-weight:600;color:${isPast ? '#ef4444' : '#22c55e'};">${startIndoors.toLocaleDateString('en-US', {month:'short', day:'numeric'})}${isPast ? ' (past)' : ''}</span>
+    </div>`);
+  }
+
+  if (lot.direct_sow !== false) {
+    const directSow = new Date(lastFrost);
+    const isPast = directSow < today;
+    lines.push(`<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <span>🌱 Direct Sow After</span>
+      <span style="font-weight:600;color:${isPast ? '#f59e0b' : '#22c55e'};">${directSow.toLocaleDateString('en-US', {month:'short', day:'numeric'})}${isPast ? ' (ongoing)' : ''}</span>
+    </div>`);
+  }
+
+  if (lot.days_to_harvest) {
+    const dth = parseInt(lot.days_to_harvest) || parseInt((lot.days_to_harvest || '').split('-')[1]) || 70;
+    const lastPlant = new Date(firstFrost);
+    lastPlant.setDate(lastPlant.getDate() - dth);
+    const isPast = lastPlant < today;
+    lines.push(`<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <span>⏰ Last Planting Date</span>
+      <span style="font-weight:600;color:${isPast ? '#ef4444' : '#22c55e'};">${lastPlant.toLocaleDateString('en-US', {month:'short', day:'numeric'})}${isPast ? ' (past)' : ''}</span>
+    </div>`);
+
+    if (lot.days_to_harvest) {
+      lines.push(`<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+        <span>🎯 Expected Harvest</span>
+        <span style="font-weight:600;">${lot.days_to_harvest} days after planting</span>
+      </div>`);
+    }
+  }
+
+  if (lot.soil_temp_min_f) {
+    lines.push(`<div style="display:flex;justify-content:space-between;">
+      <span>🌡️ Min Soil Temp</span>
+      <span style="font-weight:600;">${lot.soil_temp_min_f}°F</span>
+    </div>`);
+  }
+
+  return lines.length > 0 ? lines.join('') : '<p style="color:var(--text-muted);font-size:0.85rem;">Add growing info to see planting dates.</p>';
+}
+
+async function loadWeather() {
+  const zip = state.settings.zip_code;
+  const apiKey = state.settings.openweather_api_key;
+  if (!zip || !apiKey) return;
+  const weatherEl = document.getElementById('weather-data');
+  if (!weatherEl) return;
+  try {
+    const weather = await fetch(`https://api.openweathermap.org/data/2.5/weather?zip=${zip},US&appid=${apiKey}&units=imperial`).then(r => r.json());
+    if (weather.cod !== 200) { weatherEl.textContent = 'Weather unavailable — check API key in Settings'; return; }
+    const forecast = await fetch(`https://api.openweathermap.org/data/2.5/forecast?zip=${zip},US&appid=${apiKey}&units=imperial&cnt=40`).then(r => r.json());
+    const c = weather;
+    const desc = '🌡️ ' + (weather.weather[0]?.description || '');
+    const name = weather.name;
+    const admin1 = 'WV';
+    const frostInfo = (() => {
+      if (!state.settings.last_frost_date) return '';
+      const today = new Date();
+      const year = today.getFullYear();
+      const [lm, ld] = state.settings.last_frost_date.split('-').map(Number);
+      const lastFrost = new Date(year, lm-1, ld);
+      const days = Math.ceil((lastFrost - today) / (1000 * 60 * 60 * 24));
+      if (days < 0) return ' · 🌱 ' + Math.abs(days) + 'd past frost';
+      if (days === 0) return ' · 🌡️ Frost today';
+      return ' · 🌡️ Frost in ' + days + 'd';
+    })();
+    weatherEl.innerHTML = '<strong style="font-size:1.1rem;">' + Math.round(c.main.temp) + '°F</strong> <span>' + (c.weather[0]?.description || '') + '</span> <span style="color:var(--text-muted);font-size:0.85rem;">💨 ' + Math.round(c.wind.speed) + ' mph' + (c.rain ? ' · 🌧️' : '') + frostInfo + '</span>';
+
+    // 5 day forecast from OpenWeatherMap
+    const forecastEl = document.getElementById('weather-forecast');
+    if (forecastEl && forecast.list) {
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const days = {};
+      forecast.list.forEach(item => {
+        const date = new Date(item.dt * 1000);
+        const key = date.toDateString();
+        if (!days[key]) days[key] = { date, temps: [], icons: [], rain: false };
+        days[key].temps.push(item.main.temp_max, item.main.temp_min);
+        days[key].icons.push(item.weather[0]?.icon || '');
+        if (item.rain) days[key].rain = true;
+      });
+      const dayKeys = Object.keys(days).slice(0, 5);
+      let forecastHTML = '<div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-top:10px;margin-bottom:4px;">5-Day Forecast</div><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;">';
+      dayKeys.forEach(key => {
+        const d = days[key];
+        const hi = Math.round(Math.max(...d.temps));
+        const lo = Math.round(Math.min(...d.temps));
+        const dayName = dayNames[d.date.getDay()];
+        const icon = d.icons[0] ? `<img src="https://openweathermap.org/img/wn/${d.icons[0]}.png" style="width:30px;height:30px;">` : '🌡️';
+        forecastHTML += '<div style="text-align:center;padding:4px;background:var(--green-bg);border-radius:6px;">' +
+          '<div style="font-size:0.75rem;font-weight:700;">' + dayName + '</div>' +
+          icon +
+          '<div style="font-size:0.75rem;font-weight:600;">' + hi + '°</div>' +
+          '<div style="font-size:0.7rem;color:var(--text-muted);">' + lo + '°</div>' +
+          (d.rain ? '<div style="font-size:0.65rem;">🌧️</div>' : '') +
+          '</div>';
+      });
+      forecastHTML += '</div>';
+      forecastEl.innerHTML = forecastHTML;
+    }
+    if (state.settings.location_name !== (name + ', ' + admin1)) {
+      await api('/api/settings', 'PUT', { key: 'location_name', value: name + ', ' + admin1 });
+    }
+
+    // Auto log today's weather
+    const today = new Date().toISOString().split('T')[0];
+    await api('/api/weather', 'POST', {
+      log_date: today,
+      high_temp_f: c.main.temp_max,
+      low_temp_f: c.main.temp_min,
+      precip_inches: c.rain ? (c.rain['1h'] || 0) / 25.4 : 0,
+      condition: c.weather[0]?.description || '',
+      wind_speed_mph: Math.round(c.wind.speed),
+      source: 'auto'
+    });
+  } catch (err) { if (weatherEl) weatherEl.textContent = 'Weather unavailable'; }
+}
+
+function printSeasonSummary() {
+  const currentYear = new Date().getFullYear();
+  const thisYearPlants = state.plants.filter(p => p.season_year === currentYear);
+  const thisYearHarvest = state.harvest.filter(h => h.harvest_date && h.harvest_date.startsWith(currentYear.toString()));
+  const thisYearAmendments = state.amendments.filter(a => a.amendment_date && a.amendment_date.startsWith(currentYear.toString()));
+  const thisYearGerm = state.germination.filter(g => g.date_started && g.date_started.startsWith(currentYear.toString()));
+  const selectedPlants = thisYearPlants.filter(p => p.selected_for_seed);
+
+  const avgGermRate = thisYearGerm.filter(g => g.seeds_germinated !== null).length > 0
+    ? Math.round(thisYearGerm.filter(g => g.seeds_germinated !== null)
+        .reduce((sum, g) => sum + (g.seeds_germinated / g.seeds_planted * 100), 0)
+        / thisYearGerm.filter(g => g.seeds_germinated !== null).length)
+    : null;
+
+  const plantsByVariety = {};
+  thisYearPlants.forEach(p => {
+    const v = p.variety_name || 'Unknown';
+    plantsByVariety[v] = (plantsByVariety[v] || 0) + 1;
+  });
+
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>SeedVault Season Summary ${currentYear}</title>
+      <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: Arial, sans-serif; padding: 30px; color: #1a1a1a; max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 24pt; color: #2d5a27; margin-bottom: 4px; }
+        h2 { font-size: 14pt; color: #2d5a27; margin: 20px 0 10px; border-bottom: 2px solid #2d5a27; padding-bottom: 4px; }
+        h3 { font-size: 11pt; margin-bottom: 6px; }
+        .subtitle { font-size: 11pt; color: #666; margin-bottom: 24px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .stat-box { border: 1px solid #ddd; border-radius: 6px; padding: 12px; text-align: center; }
+        .stat-number { font-size: 22pt; font-weight: bold; color: #2d5a27; }
+        .stat-label { font-size: 8pt; color: #666; margin-top: 2px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 9pt; }
+        th { background: #2d5a27; color: white; padding: 6px 8px; text-align: left; }
+        td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+        tr:nth-child(even) td { background: #f9f9f9; }
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 8pt; font-weight: bold; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-star { color: #f59e0b; }
+        .footer { margin-top: 30px; font-size: 8pt; color: #999; text-align: center; border-top: 1px solid #eee; padding-top: 12px; }
+        @media print { body { padding: 15px; } }
+      </style>
+    </head>
+    <body>
+      <h1>🌱 SeedVault</h1>
+      <div class="subtitle">Season Summary — ${currentYear} · Generated ${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</div>
+
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-number">${thisYearPlants.length}</div><div class="stat-label">Plants This Season</div></div>
+        <div class="stat-box"><div class="stat-number">${selectedPlants.length}</div><div class="stat-label">Selected for Seed Saving</div></div>
+        <div class="stat-box"><div class="stat-number">${thisYearHarvest.length}</div><div class="stat-label">Harvest Records</div></div>
+        <div class="stat-box"><div class="stat-number">${avgGermRate !== null ? avgGermRate + '%' : '—'}</div><div class="stat-label">Avg Germination Rate</div></div>
+      </div>
+
+      <h2>🪴 Plants This Season</h2>
+      ${thisYearPlants.length === 0 ? '<p style="color:#666;font-size:9pt;">No plants logged this season.</p>' : `
+      <table>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Location</th><th>Season</th><th>Seed Save</th></tr></thead>
+        <tbody>
+          ${thisYearPlants.map(p => `<tr>
+            <td><code>${p.designation}</code></td>
+            <td>${p.variety_name || '—'}</td>
+            <td>${p.location_name || '—'}</td>
+            <td>${p.season_type}</td>
+            <td>${p.selected_for_seed ? '<span class="badge-star">⭐ Selected</span>' : '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+
+      <h2>🫙 Seed Lots in Vault</h2>
+      <table>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Quantity</th><th>Storage</th><th>Germ Rate</th></tr></thead>
+        <tbody>
+          ${state.seedLots.map(l => {
+            const qty = l.quantity_unit === 'seeds' || !l.quantity_unit
+              ? (l.quantity_estimate ? l.quantity_estimate + ' seeds' : '—')
+              : (l.quantity_weight ? l.quantity_weight + l.quantity_unit : '—');
+            return `<tr>
+              <td><code>${l.designation}</code></td>
+              <td>${l.variety_name || l.variety_code}</td>
+              <td><span class="badge badge-green">G${l.generation}</span></td>
+              <td>${l.year_saved}</td>
+              <td>${qty}</td>
+              <td>${l.storage_location || '—'}</td>
+              <td>${l.germination_rate ? l.germination_rate + '%' : '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+
+      ${thisYearGerm.length > 0 ? `
+      <h2>🌿 Germination Tests</h2>
+      <table>
+        <thead><tr><th>Seed Lot</th><th>Started</th><th>Planted</th><th>Germinated</th><th>Rate</th><th>Days</th></tr></thead>
+        <tbody>
+          ${thisYearGerm.map(g => {
+            const rate = g.seeds_germinated !== null ? Math.round(g.seeds_germinated / g.seeds_planted * 100) : null;
+            return `<tr>
+              <td><code>${g.seed_lot_designation}</code></td>
+              <td>${new Date(g.date_started).toLocaleDateString()}</td>
+              <td>${g.seeds_planted}</td>
+              <td>${g.seeds_germinated !== null ? g.seeds_germinated : '—'}</td>
+              <td>${rate !== null ? rate + '%' : '—'}</td>
+              <td>${g.days_to_germination !== null ? g.days_to_germination + 'd' : '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>` : ''}
+
+      ${thisYearAmendments.length > 0 ? `
+      <h2>🌿 Amendments & Fertilizer</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Type</th><th>Product</th><th>Plant/Location</th><th>Amount</th><th>Method</th></tr></thead>
+        <tbody>
+          ${thisYearAmendments.map(a => `<tr>
+            <td>${new Date(a.amendment_date).toLocaleDateString()}</td>
+            <td>${a.type}</td>
+            <td>${a.product_name || '—'}</td>
+            <td>${a.plant_designation || a.location_name || '—'}</td>
+            <td>${a.amount || '—'}</td>
+            <td>${a.method || '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : ''}
+
+      ${thisYearHarvest.length > 0 ? `
+      <h2>📋 Harvest Log</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Plant</th><th>Variety</th><th>Length</th><th>Weight</th><th>Seeds</th><th>Method</th></tr></thead>
+        <tbody>
+          ${thisYearHarvest.map(h => `<tr>
+            <td>${new Date(h.harvest_date).toLocaleDateString()}</td>
+            <td><code>${h.plant_designation}</code></td>
+            <td>${h.variety_name || '—'}</td>
+            <td>${h.fruit_length_inches ? h.fruit_length_inches + '"' : '—'}</td>
+            <td>${h.fruit_weight_oz ? h.fruit_weight_oz + ' oz' : '—'}</td>
+            <td>${h.seed_count || '—'}</td>
+            <td>${h.processing_method || '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : ''}
+
+      <div class="footer">Generated by SeedVault · github.com/Duhato/seedvault · ${new Date().toISOString()}</div>
+      <script>setTimeout(() => window.print(), 400);</script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
+function renderDashboard() {
+  const s = state.stats;
+  const recentLots = [...state.seedLots].slice(0, 5);
+  const selectedPlants = state.plants.filter(p => p.selected_for_seed);
+  const pendingCrosses = state.crosses.filter(c => c.success === null);
+  const currentYear = new Date().getFullYear();
+
+  // Chart data
+  const speciesCounts = {};
+  state.seedLots.forEach(l => {
+    const sp = l.species_code || 'Other';
+    speciesCounts[sp] = (speciesCounts[sp] || 0) + 1;
+  });
+
+  const plantsByVariety = {};
+  state.plants.filter(p => p.season_year === currentYear).forEach(p => {
+    const v = p.variety_name || p.variety_code || 'Unknown';
+    plantsByVariety[v] = (plantsByVariety[v] || 0) + 1;
+  });
+
+  const recentAmendments = state.amendments.slice(0, 5);
+  const totalHarvest = state.harvest.length;
+  const totalGermTests = state.germination.length;
+  const avgGermRate = state.germination.filter(g => g.seeds_germinated !== null).length > 0
+    ? Math.round(state.germination.filter(g => g.seeds_germinated !== null)
+        .reduce((sum, g) => sum + (g.seeds_germinated / g.seeds_planted * 100), 0)
+        / state.germination.filter(g => g.seeds_germinated !== null).length)
+    : null;
+
+  return `
+    <div class="page-header">
+      <h1 class="page-title">🌱 SeedVault Dashboard</h1>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="color:var(--text-muted);font-size:0.9rem;">${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</span>
+        <button class="btn btn-secondary btn-sm" onclick="printSeasonSummary()">🖨️ Season Summary</button>
+      </div>
+    </div>
+    ${(() => {
+      const lastBackup = state.settings.last_backup_date;
+      if (!lastBackup) {
+        return '<div onclick="navigate(&quot;settings&quot;)" style="background:#b45309;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>💾 <strong>No backup found</strong> — export a ZIP backup to protect your data</span>'
+          + '<span style="font-size:0.85rem;opacity:0.85;">Back up now →</span>'
+          + '</div>';
+      }
+      const days = Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24));
+      if (days >= 14) {
+        return '<div onclick="navigate(&quot;settings&quot;)" style="background:#b91c1c;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>💾 <strong>Backup overdue</strong> — last backup was ' + days + ' days ago</span>'
+          + '<span style="font-size:0.85rem;opacity:0.85;">Back up now →</span>'
+          + '</div>';
+      }
+      if (days >= 7) {
+        return '<div onclick="navigate(&quot;settings&quot;)" style="background:#92400e;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>💾 <strong>Backup reminder</strong> — last backup was ' + days + ' days ago</span>'
+          + '<span style="font-size:0.85rem;opacity:0.85;">Back up now →</span>'
+          + '</div>';
+      }
+      return '';
+    })()}
+    ${(() => {
+      // Low seed quantity alerts
+      const lowSeeds = state.seedLots.filter(function(l) {
+        if (l.quantity_unit === 'seeds' || !l.quantity_unit) {
+          return l.quantity_estimate > 0 && l.quantity_estimate < 20;
+        }
+        if (l.quantity_unit === 'mg') return l.quantity_weight > 0 && l.quantity_weight < 100;
+        if (l.quantity_unit === 'g') return l.quantity_weight > 0 && l.quantity_weight < 1;
+        return false;
+      });
+      if (lowSeeds.length > 0) {
+        return '<div onclick="navigate(\"seedlots\")" style="background:#92400e;color:white;border-radius:8px;padding:12px 16px;margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>🌱 <strong>' + lowSeeds.length + ' seed lot' + (lowSeeds.length > 1 ? 's are' : ' is') + ' running low</strong> — ' + lowSeeds.slice(0,3).map(function(l) { return l.variety_name || l.designation; }).join(', ') + (lowSeeds.length > 3 ? ' and more' : '') + '</span>'
+          + '<span style="font-size:0.85rem;opacity:0.85;">View Seed Lots →</span>'
+          + '</div>';
+      }
+      return '';
+    })()}
+    ${(() => {
+      if (!state.settings.last_frost_date) return '';
+      const today = new Date();
+      const year = today.getFullYear();
+      const [lm, ld] = state.settings.last_frost_date.split('-').map(Number);
+      const lastFrost = new Date(year, lm-1, ld);
+      const daysUntil = Math.ceil((lastFrost - today) / (1000 * 60 * 60 * 24));
+      if (daysUntil >= -7 && daysUntil <= 14) {
+        const msg = daysUntil < 0 ? `Last frost was ${Math.abs(daysUntil)} day${Math.abs(daysUntil) !== 1 ? 's' : ''} ago` : daysUntil === 0 ? 'Frost expected today' : `Frost risk in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`;
+        const sub = daysUntil < 0
+          ? `Your average last frost date is ${formatFrostDate(state.settings.last_frost_date)}. Late frosts are still possible — watch the forecast before planting tender seedlings.`
+          : `Your average last frost date is ${formatFrostDate(state.settings.last_frost_date)}. Protect tender plants from frost damage.`;
+        return `<div class="card" style="border-left:4px solid #f59e0b;padding:12px 16px;margin-bottom:0;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.5rem;">🌡️</span>
+            <div>
+              <div style="font-weight:700;color:#f59e0b;">⚠️ ${msg}</div>
+              <div style="font-size:0.85rem;color:var(--text-muted);">${sub}</div>
+            </div>
+          </div>
+        </div>`;
+      }
+      const [fm, fd] = (state.settings.first_frost_date || '10-15').split('-').map(Number);
+      const firstFrost = new Date(year, fm-1, fd);
+      const daysUntilFirst = Math.ceil((firstFrost - today) / (1000 * 60 * 60 * 24));
+      if (daysUntilFirst >= 0 && daysUntilFirst <= 30) {
+        return `<div class="card" style="border-left:4px solid #ef4444;padding:12px 16px;margin-bottom:0;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.5rem;">❄️</span>
+            <div>
+              <div style="font-weight:700;color:#ef4444;">First Fall Frost in ${daysUntilFirst} days</div>
+              <div style="font-size:0.85rem;color:var(--text-muted);">Average first frost date is ${formatFrostDate(state.settings.first_frost_date)}. Plan your final harvests.</div>
+            </div>
+          </div>
+        </div>`;
+      }
+      return '';
+    })()}
+    ${state.settings.zip_code && state.settings.openweather_api_key ? `
+    <div id="weather-widget" class="card" style="padding:12px 16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);margin-bottom:4px;">🌤️ ${state.settings.location_name || 'Local Weather'}</div>
+          <div id="weather-data" style="font-size:0.9rem;color:var(--text-muted);">Loading weather...</div>
+        <div id="weather-forecast"></div>
+        </div>
+        ${state.settings.last_frost_date ? `
+        <div style="text-align:right;">
+          <div style="font-size:0.8rem;color:var(--text-muted);">Last Frost</div>
+          <div style="font-weight:600;color:var(--green-mid);">${formatFrostDate(state.settings.last_frost_date)}</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">First Frost</div>
+          <div style="font-weight:600;color:#f59e0b;">${formatFrostDate(state.settings.first_frost_date)}</div>
+        </div>` : ''}
+      </div>
+    </div>` : ''}
+    <div class="card" style="padding:12px 16px;">
+      <div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);margin-bottom:10px;">⚡ Quick Actions</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="showAddHarvest()">📋 Log Harvest</button>
+        <button class="btn btn-primary btn-sm" onclick="showAddAmendment()">🌿 Log Amendment</button>
+        <button class="btn btn-primary btn-sm" onclick="showAddObservation()">🔍 Log Observation</button>
+        <button class="btn btn-primary btn-sm" onclick="showAddGermination()">🌱 Start Germ Test</button>
+        <button class="btn btn-secondary btn-sm" onclick="showAddPlants()">🪴 Add Plants</button>
+        <button class="btn btn-secondary btn-sm" onclick="showAddSeedLot()">🫙 Add Seed Lot</button>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card clickable" onclick="navigate('varieties')"><div class="stat-number">${s.varieties || 0}</div><div class="stat-label">Varieties</div></div>
+      <div class="stat-card clickable" onclick="navigate('seedlots')"><div class="stat-number">${s.seedLots || 0}</div><div class="stat-label">Seed Lots</div></div>
+      <div class="stat-card clickable" onclick="navigate('plants')"><div class="stat-number">${s.activePlants || 0}</div><div class="stat-label">Plants This Season</div></div>
+      <div class="stat-card clickable" onclick="navigate('projects')"><div class="stat-number">${s.activeProjects || 0}</div><div class="stat-label">Active Projects</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;">
+      <div class="stat-card" style="cursor:default;">
+        <div class="stat-number" style="color:${avgGermRate >= 80 ? '#22c55e' : avgGermRate >= 50 ? '#f59e0b' : '#ef4444'}">${avgGermRate !== null ? avgGermRate + '%' : '—'}</div>
+        <div class="stat-label">Avg Germination Rate</div>
+      </div>
+      <div class="stat-card clickable" onclick="navigate('harvest')">
+        <div class="stat-number">${totalHarvest}</div>
+        <div class="stat-label">Harvest Records</div>
+      </div>
+      <div class="stat-card clickable" onclick="navigate('amendments')">
+        <div class="stat-number">${state.amendments.length}</div>
+        <div class="stat-label">Amendments Logged</div>
+      </div>
+    </div>
+    ${Object.keys(speciesCounts).length > 0 ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+      <div class="card">
+        <div class="card-title">🫙 Seed Lots by Species</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${Object.entries(speciesCounts).sort((a,b) => b[1]-a[1]).map(([sp, count]) => {
+            const pct = Math.round(count / state.seedLots.length * 100);
+            const colors = {CUC:'#22c55e', TOM:'#ef4444', PEP:'#f59e0b', CAR:'#f97316', Other:'#6b7280'};
+            const color = colors[sp] || '#6b7280';
+            return `<div>
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:3px;">
+                <span>${sp}</span><span style="color:var(--text-muted);">${count} lot${count !== 1 ? 's' : ''}</span>
+              </div>
+              <div style="background:var(--border);border-radius:4px;height:8px;">
+                <div style="background:${color};width:${pct}%;height:8px;border-radius:4px;transition:width 0.3s;"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">🪴 Plants This Season by Variety</div>
+        ${Object.keys(plantsByVariety).length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No plants this season yet.</p>' : `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${Object.entries(plantsByVariety).sort((a,b) => b[1]-a[1]).map(([v, count]) => {
+            const total = Object.values(plantsByVariety).reduce((a,b) => a+b, 0);
+            const pct = Math.round(count / total * 100);
+            return `<div>
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:3px;">
+                <span>${v}</span><span style="color:var(--text-muted);">${count} plant${count !== 1 ? 's' : ''}</span>
+              </div>
+              <div style="background:var(--border);border-radius:4px;height:8px;">
+                <div style="background:var(--green-mid);width:${pct}%;height:8px;border-radius:4px;transition:width 0.3s;"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>`}
+      </div>
+    </div>` : ''}
+    ${recentAmendments.length > 0 ? `
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-title">🌿 Recent Amendments</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${recentAmendments.map(a => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;font-size:0.85rem;">
+            <div>
+              <span class="tag tag-active">${a.type}</span>
+              ${a.product_name ? `<strong style="margin-left:6px;">${a.product_name}</strong>` : ''}
+              ${a.plant_designation ? `<span style="margin-left:6px;color:var(--text-muted);">${a.plant_designation}</span>` : ''}
+              ${a.location_name ? `<span style="margin-left:6px;color:var(--text-muted);">📍 ${a.location_name}</span>` : ''}
+            </div>
+            <span style="color:var(--text-muted);">${new Date(a.amendment_date).toLocaleDateString()}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
+    ${state.viability.length > 0 ? `
+    <div class="card" style="border-left:4px solid #ef4444;">
+      <div class="card-title">⚠️ Seed Viability Warnings</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${state.viability.map(lot => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${lot.status === 'expired' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'};border-radius:6px;">
+            <div><span class="designation" style="cursor:pointer;" onclick="showSeedLotDetail('${lot.designation}')">${lot.designation}</span>
+            <span style="margin-left:8px;font-size:0.85rem;color:var(--text-muted);">${lot.variety_name}</span></div>
+            <span style="font-size:0.85rem;font-weight:700;color:${lot.status === 'expired' ? '#ef4444' : '#f59e0b'};">
+              ${lot.status === 'expired' ? '🔴 Expired' : '🟡 Expires in ' + lot.yearsLeft + ' year' + (lot.yearsLeft === 1 ? '' : 's')}
+            </span>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div class="card">
+        <div class="card-title">🫙 Recent Seed Lots</div>
+        ${recentLots.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No seed lots yet.</p>' : `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${recentLots.map(lot => `
+            <div class="clickable-row" onclick="showSeedLotDetail('${lot.designation}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+              <span class="designation">${lot.designation}</span>
+              <span class="gen-badge">G${lot.generation}</span>
+            </div>
+          `).join('')}
+        </div>`}
+      </div>
+      <div class="card">
+        <div class="card-title">⭐ Selected for Seed Saving</div>
+        ${selectedPlants.length === 0 ? '<p style="color:var(--text-muted);font-size:0.9rem;">No plants flagged yet.</p>' : `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${selectedPlants.map(p => `
+            <div class="clickable-row" onclick="navigate('plants')" style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+              <span class="designation">${p.designation}</span>
+              <span class="seed-star">⭐</span>
+            </div>
+          `).join('')}
+        </div>`}
+      </div>
+    </div>
+    ${pendingCrosses.length > 0 ? `
+    <div class="card" style="border-left:4px solid var(--green-mid);">
+      <div class="card-title">🌸 Pending Cross Pollinations</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${pendingCrosses.map(c => `
+          <div class="clickable-row" onclick="navigate('crosses')" style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+            <div>
+              <span class="designation" style="font-size:0.75rem;">${c.mother_designation}</span>
+              <span style="margin:0 6px;color:var(--text-muted);">×</span>
+              <span class="designation" style="font-size:0.75rem;">${c.father_designation || '?'}</span>
+            </div>
+            <span style="font-size:0.8rem;color:var(--text-muted);">${c.date_pollinated ? new Date(c.date_pollinated).toLocaleDateString() : 'Not yet pollinated'}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
+    <div class="card">
+      <div class="card-title">🧬 Active Breeding Projects</div>
+      ${state.projects.filter(p => p.status === 'active').length === 0
+        ? '<p style="color:var(--text-muted);font-size:0.9rem;">No active breeding projects.</p>'
+        : state.projects.filter(p => p.status === 'active').map(p => `
+          <div class="clickable-row" onclick="navigate('projects')" style="padding:12px;background:var(--green-bg);border-radius:6px;margin-bottom:8px;cursor:pointer;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong>${p.name}</strong><span class="designation">${p.code}</span>
+            </div>
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">${p.description || ''}</div>
+          </div>
+        `).join('')}
+    </div>
+    ${state.settings.last_frost_date && state.seedLots.length > 0 ? `
+    <div class="card">
+      <div class="card-title">📅 Planting Calendar — ${new Date().getFullYear()}</div>
+      <div style="overflow-x:auto;">
+        <div style="display:grid;grid-template-columns:140px repeat(12,1fr);gap:2px;min-width:700px;font-size:0.75rem;">
+          <div style="font-weight:700;padding:4px;">Variety</div>
+          ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m => `<div style="text-align:center;font-weight:700;padding:4px;">${m}</div>`).join('')}
+          ${state.seedLots.map(lot => {
+            if (!lot.days_to_harvest && !lot.start_indoors_weeks && lot.direct_sow === undefined) return '';
+            const year = new Date().getFullYear();
+            const [lm, ld] = state.settings.last_frost_date.split('-').map(Number);
+            const [fm, fd] = (state.settings.first_frost_date || '10-15').split('-').map(Number);
+            const lastFrost = new Date(year, lm-1, ld);
+            const firstFrost = new Date(year, fm-1, fd);
+
+            const cells = Array(12).fill('');
+
+            if (lot.start_indoors_weeks) {
+              const startIndoors = new Date(lastFrost);
+              startIndoors.setDate(startIndoors.getDate() - lot.start_indoors_weeks * 7);
+              const endIndoors = new Date(lastFrost);
+              for (let m = startIndoors.getMonth(); m <= endIndoors.getMonth(); m++) {
+                if (m >= 0 && m < 12) cells[m] = 'indoor';
+              }
+            }
+
+            if (lot.direct_sow !== false) {
+              const directStart = new Date(lastFrost);
+              const dth = parseInt(lot.days_to_harvest) || parseInt((lot.days_to_harvest || '').split('-')[0]) || 70;
+              const lastPlant = new Date(firstFrost);
+              lastPlant.setDate(lastPlant.getDate() - dth);
+              for (let m = directStart.getMonth(); m <= Math.min(lastPlant.getMonth(), 11); m++) {
+                if (m >= 0 && m < 12) cells[m] = cells[m] === 'indoor' ? 'both' : 'outdoor';
+              }
+            }
+
+            const hasData = cells.some(c => c !== '');
+            if (!hasData) return '';
+
+            return '<div style="padding:4px;font-size:0.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (lot.variety_name || lot.variety_code) + '">' + (lot.variety_name || lot.variety_code) + '</div>' +
+              cells.map(c => {
+                const bg = c === 'indoor' ? '#a855f7' : c === 'outdoor' ? '#22c55e' : c === 'both' ? '#f59e0b' : 'transparent';
+                const title = c === 'indoor' ? 'Start indoors' : c === 'outdoor' ? 'Direct sow' : c === 'both' ? 'Transition' : '';
+                return '<div style="height:20px;background:' + bg + ';border-radius:3px;opacity:0.8;" title="' + title + '"></div>';
+              }).join('');
+          }).filter(Boolean).join('')}
+        </div>
+        <div style="display:flex;gap:12px;margin-top:8px;font-size:0.75rem;flex-wrap:wrap;">
+          <span><span style="display:inline-block;width:12px;height:12px;background:#a855f7;border-radius:2px;"></span> Start Indoors</span>
+          <span><span style="display:inline-block;width:12px;height:12px;background:#22c55e;border-radius:2px;"></span> Direct Sow</span>
+          <span><span style="display:inline-block;width:12px;height:12px;background:#f59e0b;border-radius:2px;"></span> Transition</span>
+        </div>
+      </div>
+    </div>` : ''}
+    ${state.locations.length > 0 ? `
+    <div class="card">
+      <div class="card-title">📍 Garden Locations</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">
+        ${state.locations.filter(l => l.active).map(loc => {
+          const plantCount = state.plants.filter(p => p.location_id === loc.id && p.season_year === new Date().getFullYear()).length;
+          return `<div class="clickable-row" onclick="navigate('locations')" style="padding:12px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+            <div style="font-weight:700;font-size:0.9rem;">${loc.name}</div>
+            <div style="font-size:0.8rem;color:var(--text-muted);">${loc.type}</div>
+            <div style="font-size:0.8rem;margin-top:4px;"><span class="gen-badge">${plantCount}</span> plant${plantCount !== 1 ? 's' : ''}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
+  `;
+}
+
+// FULL PHOTO VIEWER
+function showFullPhoto(path, title) {
+  openModal(title, `
+    <img src="${path}" style="width:100%;border-radius:8px;border:2px solid var(--border);">
+    <div class="form-actions" style="margin-top:12px;">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  `);
+}
+
+// LINEAGE TREE
+function showLineageTree(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  if (!lot) return;
+
+  // Build lineage chain - find all related lots by variety
+  const varietyLots = state.seedLots
+    .filter(l => l.variety_code === lot.variety_code)
+    .sort((a, b) => a.generation - b.generation);
+
+  // Build ancestor chain
+  function buildChain(desig, visited = new Set()) {
+    if (!desig || visited.has(desig)) return null;
+    visited.add(desig);
+    const l = state.seedLots.find(x => x.designation === desig);
+    if (!l) return { designation: desig, unknown: true };
+    const plants = state.plants.filter(p => p.seed_lot_designation === desig);
+    const children = state.seedLots.filter(x =>
+      x.mother_designation && plants.some(p => p.designation === x.mother_designation) ||
+      x.variety_code === l.variety_code && x.generation === l.generation + 1
+    );
+    return {
+      designation: desig,
+      lot: l,
+      plants: plants.length,
+      children: children.map(c => buildChain(c.designation, visited)).filter(Boolean)
+    };
+  }
+
+  // Find root — G0 or earliest generation of this variety
+  const root = varietyLots[0];
+  const chain = buildChain(root.designation);
+
+  function renderNode(node, depth = 0, isTarget = false) {
+    if (!node) return '';
+    const isCurrentLot = node.designation === designation;
+    const bgColor = isCurrentLot ? 'var(--green-mid)' : 'var(--green-bg)';
+    const textColor = isCurrentLot ? '#fff' : 'var(--text)';
+    const borderColor = isCurrentLot ? 'var(--green-mid)' : 'var(--border)';
+    const l = node.lot;
+    return `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:0;">
+        ${depth > 0 ? '<div style="width:2px;height:20px;background:var(--border);"></div>' : ''}
+        <div style="background:${bgColor};border:2px solid ${borderColor};border-radius:8px;padding:10px 14px;min-width:180px;text-align:center;cursor:pointer;" onclick="closeModal();showSeedLotDetail('${node.designation}')">
+          <div style="font-family:monospace;font-size:0.75rem;color:${isCurrentLot ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)'};">${node.designation}</div>
+          ${l ? `<div style="font-weight:700;font-size:0.9rem;color:${textColor};margin-top:2px;">${l.variety_name || l.variety_code}</div>` : ''}
+          ${l ? `<div style="font-size:0.75rem;color:${isCurrentLot ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)'};">G${l.generation} · ${l.year_saved}</div>` : ''}
+          ${node.plants > 0 ? `<div style="font-size:0.75rem;color:${isCurrentLot ? 'rgba(255,255,255,0.7)' : 'var(--green-mid)'};">${node.plants} plant${node.plants !== 1 ? 's' : ''} grown</div>` : ''}
+        </div>
+        ${node.children && node.children.length > 0 ? `
+          <div style="display:flex;gap:16px;align-items:flex-start;">
+            ${node.children.map(child => renderNode(child, depth + 1)).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  openModal('🌿 Lineage — ' + (lot.variety_name || lot.variety_code), `
+    <div style="overflow-x:auto;padding:8px;">
+      <div style="display:flex;justify-content:center;min-width:300px;">
+        ${chain ? renderNode(chain) : '<p style="color:var(--text-muted);">No lineage data found.</p>'}
+      </div>
+    </div>
+    <div style="margin-top:16px;font-size:0.85rem;color:var(--text-muted);text-align:center;">
+      Highlighted node is the current seed lot. Click any node to view details.
+    </div>
+    <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>
+  `);
+}
+
+// SEED LOT DETAIL VIEW
+function showSeedLotDetail(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  if (!lot) return;
+  const plants = state.plants.filter(p => p.seed_lot_designation === designation);
+  const germTests = state.germination.filter(g => g.seed_lot_designation === designation);
+  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3, BEAN: 3, LETT: 3, SPIN: 3, CORN: 2, ONI: 1, PEA: 3, SQUA: 4, MELO: 5, HERB: 3 };
+  const maxYears = viabilityYears[lot.species_code] || 3;
+  const yearsLeft = maxYears - (new Date().getFullYear() - lot.year_saved);
+  const viabilityColor = yearsLeft <= 0 ? '#ef4444' : yearsLeft <= 1 ? '#f59e0b' : '#22c55e';
+  const viabilityText = yearsLeft <= 0 ? '🔴 Expired' : yearsLeft <= 1 ? '🟡 Expires in ' + yearsLeft + ' year' + (yearsLeft === 1 ? '' : 's') : '🟢 Good — ' + yearsLeft + ' years left';
+
+  const qtyDisplay = lot.quantity_unit === 'seeds' || !lot.quantity_unit
+    ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—')
+    : (lot.quantity_weight ? (parseFloat(lot.quantity_weight) % 1 === 0 ? parseInt(lot.quantity_weight) : parseFloat(lot.quantity_weight)) + ' ' + lot.quantity_unit : '—');
+
+  openModal('🫙 ' + designation, `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:1.1rem;font-weight:700;">${lot.variety_name || lot.variety_code}</div>
+          <div style="font-size:0.85rem;color:var(--text-muted);">Generation ${lot.generation} · Saved ${lot.year_saved}</div>
+        </div>
+        <span style="font-weight:700;color:${viabilityColor};">${viabilityText}</span>
+      </div>
+
+      ${lot.packet_front_path || lot.packet_back_path ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        ${lot.packet_front_path ? `<div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Front</div>
+          <img src="${lot.packet_front_path}" style="width:100%;border-radius:8px;border:2px solid var(--border);cursor:pointer;" onclick="showFullPhoto('${lot.packet_front_path}', 'Front — ${designation}')">
+        </div>` : ''}
+        ${lot.packet_back_path ? `<div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Back</div>
+          <img src="${lot.packet_back_path}" style="width:100%;border-radius:8px;border:2px solid var(--border);cursor:pointer;" onclick="showFullPhoto('${lot.packet_back_path}', 'Back — ${designation}')">
+        </div>` : ''}
+      </div>` : ''}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--green-bg);padding:12px;border-radius:8px;">
+        <div><span style="font-size:0.8rem;color:var(--text-muted);">Quantity</span><div style="font-weight:600;">${qtyDisplay}</div></div>
+        <div><span style="font-size:0.8rem;color:var(--text-muted);">Storage</span><div style="font-weight:600;">${lot.storage_location || '—'}</div></div>
+        <div><span style="font-size:0.8rem;color:var(--text-muted);">Germination Rate</span><div style="font-weight:600;">${lot.germination_rate ? lot.germination_rate + '%' : '—'}</div></div>
+        <div><span style="font-size:0.8rem;color:var(--text-muted);">Last Tested</span><div style="font-weight:600;">${lot.last_tested ? new Date(lot.last_tested).toLocaleDateString() : '—'}</div></div>
+        ${lot.lot_number ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Lot Number</span><div style="font-weight:600;">${lot.lot_number}</div></div>` : ''}
+        ${lot.packed_for_year ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Packed For</span><div style="font-weight:600;">${lot.packed_for_year}</div></div>` : ''}
+        ${lot.sell_by_date ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Sell By</span><div style="font-weight:600;">${lot.sell_by_date}</div></div>` : ''}
+        ${lot.upc_code ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">UPC</span><div style="font-weight:600;">${lot.upc_code}</div></div>` : ''}
+      </div>
+
+      ${lot.days_to_germination || lot.days_to_harvest || lot.planting_depth_inches || lot.spacing_inches || lot.sun_requirements ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌱 Growing Information</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--green-bg);padding:12px;border-radius:8px;">
+          ${lot.days_to_germination ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Days to Germinate</span><div style="font-weight:600;">${lot.days_to_germination} days</div></div>` : ''}
+          ${lot.days_to_harvest ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Days to Harvest</span><div style="font-weight:600;">${lot.days_to_harvest} days</div></div>` : ''}
+          ${lot.planting_depth_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Planting Depth</span><div style="font-weight:600;">${lot.planting_depth_inches}</div></div>` : ''}
+          ${lot.spacing_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Spacing</span><div style="font-weight:600;">${lot.spacing_inches}</div></div>` : ''}
+          ${lot.row_spacing_inches ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Row Spacing</span><div style="font-weight:600;">${lot.row_spacing_inches}</div></div>` : ''}
+          ${lot.sun_requirements ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Sun</span><div style="font-weight:600;">${lot.sun_requirements}</div></div>` : ''}
+          ${lot.watering_needs ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Watering</span><div style="font-weight:600;">${lot.watering_needs}</div></div>` : ''}
+          ${lot.soil_temp_min_f ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Min Soil Temp</span><div style="font-weight:600;">${lot.soil_temp_min_f}°F</div></div>` : ''}
+          ${lot.start_indoors_weeks ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Start Indoors</span><div style="font-weight:600;">${lot.start_indoors_weeks} weeks before last frost</div></div>` : ''}
+          ${lot.frost_tolerance ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Frost Tolerance</span><div style="font-weight:600;">${lot.frost_tolerance}</div></div>` : ''}
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Direct Sow</span><div style="font-weight:600;">${lot.direct_sow ? 'Yes' : 'No — start indoors'}</div></div>
+          ${lot.container_variety ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Container Variety</span><div style="font-weight:600;">✅ Yes</div></div>` : ''}
+          ${lot.container_size ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Container Size</span><div style="font-weight:600;">${lot.container_size}</div></div>` : ''}
+          ${lot.origin ? `<div><span style="font-size:0.8rem;color:var(--text-muted);">Origin</span><div style="font-weight:600;">${lot.origin}</div></div>` : ''}
+        </div>
+      </div>` : ''}
+
+      ${lot.notes ? `<div><div style="font-weight:700;margin-bottom:4px;font-size:0.9rem;">Notes</div><div style="font-size:0.9rem;color:var(--text-muted);">${lot.notes}</div></div>` : ''}
+
+      ${state.settings.last_frost_date && (lot.days_to_harvest || lot.start_indoors_weeks || lot.direct_sow !== undefined) ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">📅 Planting Window — ${new Date().getFullYear()}</div>
+        <div style="background:var(--green-bg);padding:12px;border-radius:8px;">
+          ${getPlantingWindow(lot)}
+        </div>
+      </div>` : ''}
+
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🪴 Plants from this lot (${plants.length})</div>
+        ${plants.length === 0 ? '<p style="font-size:0.85rem;color:var(--text-muted);">No plants logged yet.</p>'
+        : `<div style="display:flex;flex-wrap:wrap;gap:6px;">${plants.map(p => `<span class="designation" style="font-size:0.75rem;">${p.designation}${p.selected_for_seed ? ' ⭐' : ''}</span>`).join('')}</div>`}
+      </div>
+
+      ${germTests.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">🌿 Germination Tests</div>
+        ${germTests.map(g => {
+          const rate = g.seeds_germinated !== null && g.seeds_planted ? Math.round((g.seeds_germinated / g.seeds_planted) * 100) : null;
+          return `<div style="background:var(--green-bg);padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:0.85rem;">
+            ${new Date(g.date_started).toLocaleDateString()} — ${g.seeds_planted} planted
+            ${rate !== null ? `→ <strong>${rate}%</strong> germination` : '(pending)'}
+            ${g.days_to_germination ? `in ${g.days_to_germination} days` : ''}
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="closeModal(); showEditSeedLot('${designation}');">✏️ Edit</button>
+        <button class="btn btn-brown btn-sm" onclick="closeModal(); showPacketPhotos('${designation}');">📷 Photos</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal(); showAddPlants('${designation}');">+ Add Plants</button>
+        <button class="btn btn-secondary btn-sm" onclick="showLineageTree('${designation}');">🌿 Lineage</button>
+      </div>
+    </div>
+  `);
+}
+
+function renderVarieties() {
+  const searchTerm = (document.getElementById('variety-search')?.value || '').toLowerCase();
+  const filterSpecies = document.getElementById('variety-filter-species')?.value || '';
+  let filteredVarieties = state.varieties.filter(v => {
+    const matchSearch = !searchTerm ||
+      v.name.toLowerCase().includes(searchTerm) ||
+      v.code.toLowerCase().includes(searchTerm) ||
+      (v.source || '').toLowerCase().includes(searchTerm);
+    const matchSpecies = !filterSpecies || v.species_code === filterSpecies;
+    return matchSearch && matchSpecies;
+  });
+  return `
+    <div class="page-header"><h1 class="page-title">🌿 Varieties</h1><button class="btn btn-primary" onclick="showAddVariety()">+ Add Variety</button></div>
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="variety-search" placeholder="🔍 Search varieties..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="variety-filter-species" style="max-width:150px;" onchange="render()">
+          <option value="">All Species</option>
+          ${state.species.map(s => `<option value="${s.code}" ${filterSpecies === s.code ? 'selected' : ''}>${s.name}</option>`).join('')}
+        </select>
+        ${searchTerm || filterSpecies ? `<button class="btn btn-secondary btn-sm" onclick="clearVarietyFilters()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredVarieties.length} of ${state.varieties.length} varieties</span>
+      </div>
+    </div>
+    <div class="card">
+      ${filteredVarieties.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🌿</div><p>${state.varieties.length === 0 ? 'No varieties yet.' : 'No varieties match your search.'}</p></div>`
+      : `<div class="table-wrap"><table>
+        <thead><tr><th>Code</th><th>Name</th><th>Species</th><th>Type</th><th>Source</th><th>Year</th><th>Lots</th><th>Actions</th></tr></thead>
+        <tbody>${filteredVarieties.map(v => {
+          const lots = state.seedLots.filter(l => l.variety_code === v.code).length;
+          return `<tr style="cursor:pointer;" onclick="showVarietyDetail('${v.code}')">
+            <td><span class="designation">${v.code}</span></td>
+            <td><strong>${v.name}</strong></td>
+            <td>${v.species_name || v.species_code}</td>
+            <td><span class="tag tag-${v.type.toLowerCase()}">${v.type}</span></td>
+            <td>${v.source || '—'}</td><td>${v.year_acquired || '—'}</td>
+            <td><span class="gen-badge">${lots}</span></td>
+            <td onclick="event.stopPropagation()" style="display:flex;gap:4px;">
+              <button class="btn btn-secondary btn-sm" data-tip="Edit this variety" onclick="showEditVariety('${v.code}')">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" data-tip="Delete this variety" onclick="deleteVariety('${v.code}')">🗑️</button>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`}
+    </div>
+  `;
+}
+
+function clearPlantFilters() {
+  const s = document.getElementById('plant-search');
+  const fs = document.getElementById('plant-filter-seedsave');
+  const fl = document.getElementById('plant-filter-location');
+  if (s) s.value = '';
+  if (fs) fs.value = '';
+  if (fl) fl.value = '';
+  render();
+}
+
+function clearSeedLotFilters() {
+  const s = document.getElementById('seedlot-search');
+  const fs = document.getElementById('seedlot-filter-species');
+  const fg = document.getElementById('seedlot-filter-gen');
+  if (s) s.value = '';
+  if (fs) fs.value = '';
+  if (fg) fg.value = '';
+  render();
+}
+
+function clearVarietyFilters() {
+  const s = document.getElementById('variety-search');
+  const fs = document.getElementById('variety-filter-species');
+  if (s) s.value = '';
+  if (fs) fs.value = '';
+  render();
+}
+
+function showVarietyDetail(code) {
+  const v = state.varieties.find(x => x.code === code);
+  const lots = state.seedLots.filter(l => l.variety_code === code);
+  openModal('🌿 ' + v.name, `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="background:var(--green-bg);padding:12px;border-radius:8px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Code</span><div><span class="designation">${v.code}</span></div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Species</span><div style="font-weight:600;">${v.species_name || v.species_code}</div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Type</span><div><span class="tag tag-${v.type.toLowerCase()}">${v.type}</span></div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Source</span><div style="font-weight:600;">${v.source || '—'}</div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Year Acquired</span><div style="font-weight:600;">${v.year_acquired || '—'}</div></div>
+          <div><span style="font-size:0.8rem;color:var(--text-muted);">Seed Lots</span><div><span class="gen-badge">${lots.length}</span></div></div>
+        </div>
+        ${v.description ? `<div style="margin-top:8px;font-size:0.85rem;color:var(--text-muted);">${v.description}</div>` : ''}
+      </div>
+      ${lots.length > 0 ? `
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:0.9rem;">Seed Lots</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${lots.map(l => `
+            <div class="clickable-row" onclick="closeModal(); showSeedLotDetail('${l.designation}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--green-bg);border-radius:6px;cursor:pointer;">
+              <span class="designation">${l.designation}</span>
+              <div style="display:flex;gap:8px;align-items:center;">
+                ${l.germination_rate ? `<span style="font-size:0.8rem;">${l.germination_rate}% germ</span>` : ''}
+                <span class="gen-badge">G${l.generation}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="closeModal(); showEditVariety('${code}');">✏️ Edit</button>
+      </div>
+    </div>
+  `);
+}
+
+function showAddVariety() { openModal('Add New Variety', varietyForm(null)); }
+function showEditVariety(code) { openModal('Edit Variety — ' + code, varietyForm(state.varieties.find(x => x.code === code))); }
+
+function varietyForm(v) {
+  return `
+    <div class="form-group"><label class="form-label">Species *</label>
+      <select class="form-control" id="f-species" ${v ? 'disabled' : ''}>
+        ${state.species.map(s => `<option value="${s.code}" ${v && v.species_code === s.code ? 'selected' : ''}>${s.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Variety Name *</label><input class="form-control" id="f-vname" placeholder="e.g. Straight 8" value="${v ? v.name : ''}"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label>
+        <select class="form-control" id="f-type">
+          <option value="OP" ${v && v.type === 'OP' ? 'selected' : ''}>Open Pollinated (OP)</option>
+          <option value="Heirloom" ${v && v.type === 'Heirloom' ? 'selected' : ''}>Heirloom (open pollinated 50+ years)</option>
+          <option value="Hybrid" ${v && v.type === 'Hybrid' ? 'selected' : ''}>Hybrid (F1)</option>
+          <option value="AOP" ${v && v.type === 'AOP' ? 'selected' : ''}>Hybrid OP (stabilizing)</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Year Acquired</label><input class="form-control" id="f-year" type="number" value="${v ? v.year_acquired || '' : ''}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Source</label><input class="form-control" id="f-source" value="${v ? v.source || '' : ''}" placeholder="e.g. Burpee"></div>
+    <div class="form-group"><label class="form-label">Description / Notes</label><textarea class="form-control" id="f-desc" rows="3">${v ? v.description || '' : ''}</textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="${v ? `submitEditVariety('${v.code}')` : 'submitVariety()'}">${v ? 'Save Changes' : 'Save Variety'}</button>
+    </div>
+  `;
+}
+
+async function submitVariety() {
+  const name = document.getElementById('f-vname').value.trim();
+  const species_code = document.getElementById('f-species').value;
+  if (!name || !species_code) return alert('Name and species are required');
+  await api('/api/varieties', 'POST', { name, species_code, type: document.getElementById('f-type').value, year_acquired: document.getElementById('f-year').value || null, source: document.getElementById('f-source').value, description: document.getElementById('f-desc').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function submitEditVariety(code) {
+  const name = document.getElementById('f-vname').value.trim();
+  if (!name) return alert('Name is required');
+  await api('/api/varieties/' + code, 'PUT', { name, type: document.getElementById('f-type').value, year_acquired: document.getElementById('f-year').value || null, source: document.getElementById('f-source').value, description: document.getElementById('f-desc').value });
+  closeModal(); await loadAll(); render();
+}
+
+async function deleteVariety(code) {
+  if (!confirm('Delete variety ' + code + '? This cannot be undone.')) return;
+  await api('/api/varieties/' + code, 'DELETE'); await loadAll(); render();
+}
+
+function renderSeedLots() {
+  const currentYear = new Date().getFullYear();
+  const viabilityYears = { CUC: 5, TOM: 4, PEP: 3, CAR: 3, BEAN: 3, LETT: 3, SPIN: 3, CORN: 2, ONI: 1, PEA: 3, SQUA: 4, MELO: 5, HERB: 3 };
+  const searchTerm = (document.getElementById('seedlot-search')?.value || '').toLowerCase();
+  const filterSpecies = document.getElementById('seedlot-filter-species')?.value || '';
+  const filterGen = document.getElementById('seedlot-filter-gen')?.value || '';
+  let filteredLots = state.seedLots.filter(lot => {
+    const matchSearch = !searchTerm ||
+      lot.designation.toLowerCase().includes(searchTerm) ||
+      (lot.variety_name || '').toLowerCase().includes(searchTerm) ||
+      (lot.storage_location || '').toLowerCase().includes(searchTerm) ||
+      (lot.lot_number || '').toLowerCase().includes(searchTerm);
+    const matchSpecies = !filterSpecies || lot.species_code === filterSpecies;
+    const matchGen = !filterGen || String(lot.generation) === filterGen;
+    return matchSearch && matchSpecies && matchGen;
+  });
+  return `
+    <div class="page-header"><h1 class="page-title">🫙 Seed Lots</h1><button class="btn btn-primary" onclick="showAddSeedLot()">+ Add Seed Lot</button></div>
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input class="form-control" id="seedlot-search" placeholder="🔍 Search lots..." style="max-width:220px;" oninput="render()" value="${searchTerm}">
+        <select class="form-control" id="seedlot-filter-species" style="max-width:150px;" onchange="render()">
+          <option value="">All Species</option>
+          ${state.species.map(s => `<option value="${s.code}" ${filterSpecies === s.code ? 'selected' : ''}>${s.name}</option>`).join('')}
+        </select>
+        <select class="form-control" id="seedlot-filter-gen" style="max-width:130px;" onchange="render()">
+          <option value="">All Generations</option>
+          <option value="0" ${filterGen === '0' ? 'selected' : ''}>G0 — Commercial</option>
+          <option value="1" ${filterGen === '1' ? 'selected' : ''}>G1 — First Saved</option>
+          <option value="2" ${filterGen === '2' ? 'selected' : ''}>G2</option>
+          <option value="3" ${filterGen === '3' ? 'selected' : ''}>G3+</option>
+        </select>
+        ${searchTerm || filterSpecies || filterGen ? `<button class="btn btn-secondary btn-sm" onclick="clearSeedLotFilters()">✕ Clear</button>` : ''}
+        <span style="font-size:0.85rem;color:var(--text-muted);">${filteredLots.length} of ${state.seedLots.length} lots</span>
+      </div>
+    </div>
+    <div class="card">
+      ${filteredLots.length === 0 ? `<div class="empty-state"><div class="empty-state-icon">🫙</div><p>${state.seedLots.length === 0 ? 'No seed lots yet.' : 'No lots match your search.'}</p></div>`
+      : `<div class="table-wrap"><table>
+        <thead><tr><th>Designation</th><th>Variety</th><th>Gen</th><th>Year</th><th>Quantity</th><th>Storage</th><th>Germination</th><th>Notes</th><th>Viability</th><th>Actions</th></tr></thead>
+        <tbody>${filteredLots.map(lot => {
+          const maxYears = viabilityYears[lot.species_code] || 3;
+          const yearsLeft = maxYears - (currentYear - lot.year_saved);
+          let viabilityBadge = '<span style="color:#22c55e;font-weight:600;">🟢 ' + yearsLeft + ' yr' + (yearsLeft === 1 ? '' : 's') + ' left</span>';
+          if (yearsLeft <= 0) viabilityBadge = '<span style="color:#ef4444;font-weight:600;">🔴 Expired</span>';
+          else if (yearsLeft <= 1) viabilityBadge = '<span style="color:#f59e0b;font-weight:600;">🟡 ' + yearsLeft + ' yr left</span>';
+          const qtyRaw = lot.quantity_unit === 'seeds' || !lot.quantity_unit
+            ? (lot.quantity_estimate ? lot.quantity_estimate + ' seeds' : '—')
+            : (lot.quantity_weight ? (parseFloat(lot.quantity_weight) % 1 === 0 ? parseInt(lot.quantity_weight) : parseFloat(lot.quantity_weight)) + ' ' + lot.quantity_unit : '—');
+          const qtyDisplay = qtyRaw;
+          return `<tr style="cursor:pointer;" onclick="showSeedLotDetail('${lot.designation}')">
+            <td><span class="designation">${lot.designation}</span></td>
+            <td>${lot.variety_name || lot.variety_code}</td>
+            <td><span class="gen-badge">G${lot.generation}</span></td>
+            <td>${lot.year_saved}</td>
+            <td>${qtyDisplay}</td>
+            <td>${lot.storage_location || '—'}</td>
+            <td>${lot.germination_rate ? lot.germination_rate + '%' : '—'}</td>
+            <td style="max-width:150px;font-size:0.8rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${lot.notes ? lot.notes.substring(0, 40) + (lot.notes.length > 40 ? '...' : '') : '—'}</td>
+            <td>${viabilityBadge}</td>
+            <td onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" onclick="showEditSeedLot('${lot.designation}')">✏️</button>
+              <button class="btn btn-brown btn-sm" onclick="showPacketPhotos('${lot.designation}')">📷</button>
+              <button class="btn btn-secondary btn-sm" onclick="showSeedLotQR('${lot.designation}')">⬛ QR</button>
+              <button class="btn btn-secondary btn-sm" onclick="showCompanionPlants('${lot.species_code || lot.variety_code.split('-')[0]}', '${lot.variety_name || lot.variety_code}')">🌿 Companions</button>
+              <button class="btn btn-secondary btn-sm" onclick="printSeedLabel('${lot.designation}')">🏷️ Label</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteSeedLot('${lot.designation}')">🗑️</button>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`}
+    </div>
+  `;
+}
+
+function printSeedLabel(designation) {
+  const lot = state.seedLots.find(l => l.designation === designation);
+  if (!lot) return;
+  openModal('🏷️ Print Label — ' + designation, `
+    <div class="form-group">
+      <label class="form-label">Label Size</label>
+      <select class="form-control" id="f-labelsize">
+        <option value="30346">Dymo 30346 — 1" x 2-1/8" (Small seed label)</option>
+        <option value="1933081" selected>Dymo 1933081 — 1" x 3-1/2" (Standard seed label)</option>
+        <option value="30252">Dymo 30252 — 1-1/8" x 3-1/2" (Address label)</option>
+        <option value="30321">Dymo 30321 — 2-1/8" x 4" (Large label)</option>
+        <option value="custom">Custom size</option>
+      </select>
+    </div>
+    <div id="custom-size-fields" class="hidden">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Width (inches)</label><input class="form-control" id="f-labelw" type="number" step="0.125" value="3.5"></div>
+        <div class="form-group"><label class="form-label">Height (inches)</label><input class="form-control" id="f-labelh" type="number" step="0.125" value="1"></div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:12px;">
+      <label class="form-label">Include on label</label>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-qr" checked> QR Code</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-variety" checked> Variety Name</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-designation" checked> Designation Code</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-storage" checked> Storage Location</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-growing" checked> Growing Info (days to germ/harvest)</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-dates" checked> Packed/Sell By Dates</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;"><input type="checkbox" id="lbl-qty" checked> Quantity</label>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="generateSeedLabel('${designation}')">🖨️ Print</button>
+    </div>
+  `);
+  setTimeout(() => {
+    document.getElementById('f-labelsize').addEventListener('change', e => {
+      document.getElementById('custom-size-fields').classList.toggle('hidden', e.target.value !== 'custom');
+    });
+  }, 50);
+}
+
